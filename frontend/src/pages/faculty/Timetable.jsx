@@ -1,228 +1,157 @@
-import { useState, useEffect, useMemo } from 'react'
-import {
-  CalendarDays,
-  Clock,
-  Sparkles,
-  BookOpen,
-  MapPin,
-  Users,
-  Info,
-} from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { CalendarDays, MapPin, BookOpen } from 'lucide-react'
 import Modal from '../../components/Modal'
-import LoadingSpinner from '../../components/LoadingSpinner'
+import Badge from '../../components/Badge'
+import EmptyState from '../../components/EmptyState'
+import { Skeleton } from '../../components/LoadingSpinner'
+import { PageHeader, ErrorState, Meta } from '../../components/ui'
 import { timetableService } from '../../services/timetableService'
 import { substitutionService } from '../../services/substitutionService'
-import { useToast } from '../../context/ToastContext'
-
-const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
-const TIME_SLOTS = [
-  '09:00 - 10:00',
-  '10:00 - 11:00',
-  '11:15 - 12:15',
-  '12:15 - 01:15',
-  '02:00 - 03:00',
-  '03:00 - 04:00',
-  '04:00 - 05:00',
-]
+import { useAuth } from '../../context/AuthContext'
+import useLoad from '../../lib/useLoad'
+import useMediaQuery from '../../lib/useMediaQuery'
+import { splitDuties } from '../../lib/facultyData'
+import { asList, weekDates, weekdayName, hhmm, formatDate, formatDateLong, WEEKDAYS } from '../../lib/format'
 
 export default function FacultyTimetable() {
   const { user } = useAuth()
-  const [timetableEntries, setTimetableEntries] = useState([])
-  const [substitutionEntries, setSubstitutionEntries] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [viewSlot, setViewSlot] = useState(null)
+  const fid = user?.faculty_id
+  const wide = useMediaQuery('(min-width: 900px)')
+  const today = weekdayName()
+  const week = weekDates()
+  const [day, setDay] = useState(WEEKDAYS.includes(today) ? today : 'Monday')
+  const [open, setOpen] = useState(null)
 
-  const toast = useToast()
+  const entries = useLoad(() => (fid ? timetableService.getAll({ faculty_id: fid }).then((d) => asList(d)) : Promise.resolve([])), [fid], { initial: [] })
+  const subs = useLoad(() => (fid ? substitutionService.getAll({ faculty_id: fid }).then((d) => asList(d)) : Promise.resolve([])), [fid], { initial: [] })
 
-  const loadSchedule = async () => {
-    setLoading(true)
-    try {
-      const [ttRes, subRes] = await Promise.allSettled([
-        timetableService.getAll({ faculty_id: user?.id }),
-        substitutionService.getAll({ substitute_id: user?.id }),
-      ])
+  const duties = useMemo(() => splitDuties(subs.data, fid), [subs.data, fid])
+  const isoByDay = Object.fromEntries(week.map((w) => [w.name, w.iso]))
 
-      if (ttRes.status === 'fulfilled') {
-        const list = Array.isArray(ttRes.value) ? ttRes.value : ttRes.value?.timetable || []
-        setTimetableEntries(list)
-      }
-
-      if (subRes.status === 'fulfilled') {
-        const subs = Array.isArray(subRes.value) ? subRes.value : subRes.value?.substitutions || []
-        setSubstitutionEntries(subs)
-      }
-    } catch {
-      toast.error('Failed to load your personal weekly schedule.')
-    } finally {
-      setLoading(false)
-    }
+  // Items for one weekday this week: own classes (with cover status) + cover duties.
+  const itemsFor = (d) => {
+    const iso = isoByDay[d]
+    const own = entries.data
+      .filter((e) => e.day_of_week === d)
+      .map((e) => ({ kind: 'class', key: `c${e.id}`, e, start: e.start_time, end: e.end_time, cover: duties.coveredForMe.find((s) => s.timetable_id === e.id && s.date === iso) }))
+    const cover = [...duties.upcoming, ...duties.past].filter((s) => s.date === iso).map((s) => ({ kind: 'cover', key: `s${s.id}`, s, start: s.start_time, end: s.end_time }))
+    return [...own, ...cover].sort((a, b) => (a.start || '').localeCompare(b.start || ''))
   }
 
-  useEffect(() => {
-    loadSchedule()
-  }, [user])
-
-  // Lookup map: `${day}_${timeSlot}` -> entry
-  const timetableMap = useMemo(() => {
-    const map = {}
-
-    // First map regular timetable classes
-    timetableEntries.forEach((entry) => {
-      const day = (entry.day || '').toUpperCase()
-      const slot = entry.time_slot || `${entry.start_time || '09:00'} - ${entry.end_time || '10:00'}`
-      const matchingSlot = TIME_SLOTS.find(
-        (ts) => ts === slot || slot.startsWith(ts.split(' - ')[0])
-      ) || slot
-
-      map[`${day}_${matchingSlot}`] = {
-        ...entry,
-        isRegular: true,
-      }
+  const slots = useMemo(() => {
+    const m = new Map()
+    entries.data.forEach((e) => m.set(`${hhmm(e.start_time)}-${hhmm(e.end_time)}`, [hhmm(e.start_time), hhmm(e.end_time)]))
+    ;[...duties.upcoming, ...duties.past].forEach((s) => {
+      if (Object.values(isoByDay).includes(s.date)) m.set(`${hhmm(s.start_time)}-${hhmm(s.end_time)}`, [hhmm(s.start_time), hhmm(s.end_time)])
     })
+    return [...m.values()].sort((a, b) => a[0].localeCompare(b[0]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries.data, duties])
 
-    // Layer active substitution assignments
-    substitutionEntries.forEach((sub) => {
-      if ((sub.status || '').toUpperCase() !== 'REJECTED') {
-        const day = (sub.day || 'MONDAY').toUpperCase()
-        const slot = sub.time_slot || '09:00 - 10:00'
-        const matchingSlot = TIME_SLOTS.find(
-          (ts) => ts === slot || slot.startsWith(ts.split(' - ')[0])
-        ) || slot
+  const laterDuties = duties.upcoming.filter((s) => s.date > week[week.length - 1].iso)
+  const loading = entries.loading || subs.loading
 
-        map[`${day}_${matchingSlot}`] = {
-          ...sub,
-          isSubstitution: true,
-        }
-      }
-    })
+  if (!fid) {
+    return (
+      <div className="sheet">
+        <EmptyState mascot title="No faculty profile linked" description="This account has no personal timetable." />
+      </div>
+    )
+  }
 
-    return map
-  }, [timetableEntries, substitutionEntries])
+  const Card = ({ it }) =>
+    it.kind === 'cover' ? (
+      <button type="button" onClick={() => setOpen(it)} className="w-full text-left rounded-md border-2 border-dashed border-accent/60 bg-accent-soft px-2.5 py-2">
+        <span className="block text-sm font-semibold text-ink">{it.s.subject_name}</span>
+        <span className="block text-xs text-ink-2 truncate">
+          Cover for {it.s.absent_faculty_name}, {it.s.class_name}
+        </span>
+        <span className="block text-xs text-ink-2 truncate">{it.s.classroom}</span>
+      </button>
+    ) : (
+      <button type="button" onClick={() => setOpen(it)} className={`w-full text-left rounded-md border border-line px-2.5 py-2 ${it.cover ? 'bg-surface-2' : 'bg-surface hover:shadow-sheet'}`}>
+        <span className={`block text-sm font-semibold text-ink ${it.cover?.status === 'SUSPENDED' ? 'line-through' : ''}`}>{it.e.subject_name}</span>
+        <span className="block text-xs text-ink-2 truncate">
+          {it.e.class_name}
+          {it.e.section ? ` (${it.e.section})` : ''}
+          {it.e.classroom ? `, ${it.e.classroom}` : ''}
+        </span>
+        {it.cover && <span className="mt-1 inline-flex chip-neutral !text-2xs">{['APPROVED', 'ASSIGNED'].includes(it.cover.status) ? `Covered by ${it.cover.assignment?.assigned_faculty_name || it.cover.recommended_faculty_name}` : 'You are away'}</span>}
+      </button>
+    )
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header & Legend */}
-      <div className="card flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="font-heading font-bold text-lg text-textPrimary">
-            My Teaching Schedule (Weekly Grid)
-          </h2>
-          <p className="text-xs text-textSecondary mt-0.5">
-            Synchronized schedule showing regular teaching duties and active substitution assignments.
-          </p>
-        </div>
+    <div className="space-y-5">
+      <PageHeader title="My timetable" description="Your weekly classes, with this week's cover duties and the classes colleagues are covering for you." />
 
-        <div className="flex items-center gap-3 text-xs font-medium text-textSecondary">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-[#F7DCE5] border border-[#E8A0B4]" />
-            Regular Class
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-[#EBE9F8] border border-[#8B84C4]" />
-            Assigned Substitution
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-[#FCE8EA] border border-[#C0616A]" />
-            Suspended
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-2">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border border-line bg-surface" aria-hidden="true" />
+          Your class
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border-2 border-dashed border-accent/60 bg-accent-soft" aria-hidden="true" />
+          Cover duty
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-sm border border-line bg-surface-2" aria-hidden="true" />
+          Covered by a colleague
+        </span>
       </div>
 
-      {/* Timetable Weekly Matrix */}
-      <div className="card !p-0 overflow-hidden shadow-card">
+      {!wide && (
+        <div className="seg w-full overflow-x-auto flex-nowrap relative" role="tablist" aria-label="Day">
+          {week.map((w) => (
+            <button key={w.name} type="button" role="tab" aria-selected={day === w.name} onClick={() => setDay(w.name)} className="seg-item shrink-0">
+              {w.name.slice(0, 3)} <span className="text-2xs text-ink-3 tabular">{w.date.getDate()}</span>
+              {w.name === today && <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-label="today" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <section className="sheet overflow-hidden" aria-label="Weekly timetable">
         {loading ? (
-          <div className="py-24 flex justify-center">
-            <LoadingSpinner message="Building your weekly teaching matrix..." />
+          <div className="p-5">
+            <Skeleton className="h-64" />
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse min-w-[900px]">
+        ) : entries.error ? (
+          <ErrorState message={entries.error} onRetry={entries.reload} />
+        ) : slots.length === 0 ? (
+          <EmptyState icon={CalendarDays} title="No classes timetabled" description="Your administrator has not scheduled any classes for you yet." />
+        ) : wide ? (
+          <div className="overflow-x-auto relative">
+            <table className="w-full border-collapse min-w-[860px] table-fixed">
               <thead>
-                <tr className="bg-secondary/40 border-b border-border">
-                  <th className="p-3.5 text-center text-xs font-heading font-semibold text-textSecondary uppercase tracking-wider w-32 border-r border-border">
-                    Time Slot
-                  </th>
-                  {DAYS.map((day) => (
-                    <th
-                      key={day}
-                      className="p-3.5 text-center text-xs font-heading font-semibold text-textPrimary uppercase tracking-wider border-r border-border last:border-r-0"
-                    >
-                      {day}
+                <tr>
+                  <th className="w-[80px] bg-surface-2 border-b border-line" />
+                  {week.map((w) => (
+                    <th key={w.name} className={`px-2 py-2.5 text-left border-b border-l border-line ${w.name === today ? 'bg-accent-soft' : 'bg-surface-2'}`}>
+                      <span className={`block text-sm font-semibold ${w.name === today ? 'text-accent-ink' : 'text-ink'}`}>{w.name}</span>
+                      <span className="block text-xs font-normal text-ink-2">
+                        {formatDate(w.iso, { day: 'numeric', month: 'short' })}
+                        {w.name === today ? ', today' : ''}
+                      </span>
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border text-sm">
-                {TIME_SLOTS.map((slot) => (
-                  <tr key={slot} className="hover:bg-background/40 transition-colors">
-                    {/* Time Column */}
-                    <td className="p-3.5 text-center text-xs font-mono font-medium text-textSecondary bg-background/50 border-r border-border whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1">
-                        <Clock className="w-3 h-3 text-accent" />
-                        {slot}
-                      </div>
-                    </td>
-
-                    {/* Day Cells */}
-                    {DAYS.map((day) => {
-                      const key = `${day}_${slot}`
-                      const entry = timetableMap[key]
-
-                      if (!entry) {
-                        return (
-                          <td
-                            key={key}
-                            className="p-2 border-r border-border last:border-r-0 text-center align-top"
-                          >
-                            <div className="w-full h-16 rounded-xl border border-dashed border-border/60 flex items-center justify-center text-[11px] text-textSecondary/40 select-none">
-                              Free
-                            </div>
-                          </td>
-                        )
-                      }
-
-                      const isSub = Boolean(entry.isSubstitution || entry.is_substitution)
-                      const isSuspended = (entry.status || '').toUpperCase() === 'SUSPENDED'
-
-                      let chipStyle = 'bg-[#F7DCE5] text-accent border-[#E8A0B4] hover:bg-[#F3CAD6]'
-                      if (isSub) {
-                        chipStyle = 'bg-[#EBE9F8] text-info border-[#8B84C4] hover:bg-[#E0DCF4]'
-                      } else if (isSuspended) {
-                        chipStyle = 'bg-[#FCE8EA] text-error border-[#C0616A] line-through opacity-80'
-                      }
-
+              <tbody>
+                {slots.map((slot) => (
+                  <tr key={slot.join()}>
+                    <th scope="row" className="align-top px-3 py-3 text-left border-b border-line bg-surface-2/60">
+                      <span className="block text-sm font-semibold text-ink tabular">{slot[0]}</span>
+                      <span className="block text-xs text-ink-3 tabular">{slot[1]}</span>
+                    </th>
+                    {WEEKDAYS.map((d) => {
+                      const list = itemsFor(d).filter((it) => hhmm(it.start) === slot[0] && hhmm(it.end) === slot[1])
                       return (
-                        <td
-                          key={key}
-                          className="p-2 border-r border-border last:border-r-0 align-top"
-                        >
-                          <div
-                            onClick={() => setViewSlot(entry)}
-                            className={`p-2.5 rounded-xl border cursor-pointer transition-all shadow-sm ${chipStyle} text-left flex flex-col justify-between min-h-[72px]`}
-                          >
-                            <div>
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-heading font-bold text-xs truncate leading-tight">
-                                  {entry.subject_name || entry.subject?.name || entry.subject || 'Class Subject'}
-                                </span>
-                                {isSub && (
-                                  <span className="text-[9px] font-bold uppercase bg-info/20 text-info px-1 rounded shrink-0">
-                                    SUB
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[11px] font-medium opacity-90 block mt-0.5 truncate">
-                                {isSub
-                                  ? `Covering: ${entry.absent_faculty_name || 'Absent Staff'}`
-                                  : entry.class_name || 'Cohort'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between text-[10px] opacity-80 mt-1.5 pt-1 border-current/10 border-t">
-                              <span>{entry.classroom || 'Lab Room'}</span>
-                              <span>{entry.section ? `Sec ${entry.section}` : 'Standard'}</span>
-                            </div>
+                        <td key={d} className={`align-top p-1.5 border-b border-l border-line ${d === today ? 'bg-accent-soft/25' : ''}`}>
+                          <div className="space-y-1.5">
+                            {list.map((it) => (
+                              <Card key={it.key} it={it} />
+                            ))}
                           </div>
                         </td>
                       )
@@ -232,69 +161,99 @@ export default function FacultyTimetable() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-
-      {/* Class Details Modal */}
-      <Modal
-        isOpen={Boolean(viewSlot)}
-        onClose={() => setViewSlot(null)}
-        title={viewSlot?.subject_name || viewSlot?.subject?.name || viewSlot?.subject || 'Class Details'}
-        subtitle={`${viewSlot?.day || ''} &bull; ${viewSlot?.time_slot || ''}`}
-        footer={
-          <button
-            type="button"
-            onClick={() => setViewSlot(null)}
-            className="btn-secondary text-xs"
-          >
-            Close
-          </button>
-        }
-      >
-        {viewSlot && (
-          <div className="space-y-4 text-sm">
-            <div className="p-4 rounded-xl bg-secondary/30 border border-border flex items-center justify-between">
-              <div>
-                <span className="text-xs text-textSecondary uppercase font-medium">Classroom Allocation</span>
-                <p className="font-heading font-bold text-base text-textPrimary mt-0.5">
-                  {viewSlot.classroom || 'Classroom Hall'}
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-accent/15 text-accent">
-                {viewSlot.isSubstitution ? 'Substitution Duty' : 'Regular Class'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 rounded-xl border border-border bg-white">
-                <span className="text-textSecondary block">Target Cohort</span>
-                <span className="font-semibold text-textPrimary mt-1 block">
-                  {viewSlot.class_name || 'Standard Cohort'} (Sec {viewSlot.section || 'A'})
-                </span>
-              </div>
-              <div className="p-3 rounded-xl border border-border bg-white">
-                <span className="text-textSecondary block">Scheduled Time</span>
-                <span className="font-semibold text-textPrimary mt-1 block font-mono">
-                  {viewSlot.time_slot || `${viewSlot.start_time} - ${viewSlot.end_time}`}
-                </span>
-              </div>
-            </div>
-
-            {viewSlot.isSubstitution && (
-              <div className="p-3.5 rounded-xl bg-info/10 border border-info/20 text-xs text-info flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block font-semibold">Substitution Details:</strong>
-                  <span>
-                    You have been assigned to cover this period for{' '}
-                    <strong>{viewSlot.absent_faculty_name || 'your colleague'}</strong>. Please proceed to the assigned lecture hall on time.
-                  </span>
-                </div>
-              </div>
+        ) : (
+          <div className="p-4">
+            {itemsFor(day).length === 0 ? (
+              <EmptyState compact icon={CalendarDays} title={`Free on ${day}`} />
+            ) : (
+              <ul className="space-y-3">
+                {itemsFor(day).map((it) => (
+                  <li key={it.key} className="grid grid-cols-[60px_1fr] gap-3">
+                    <span className="pt-2 text-sm font-semibold text-ink tabular">
+                      {hhmm(it.start)}
+                      <span className="block text-xs font-normal text-ink-3">{hhmm(it.end)}</span>
+                    </span>
+                    <Card it={it} />
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
+      </section>
+
+      {laterDuties.length > 0 && (
+        <section className="sheet p-5" aria-labelledby="later-h">
+          <h2 id="later-h" className="sheet-title mb-3">
+            Cover duties after this week
+          </h2>
+          <ul className="divide-y divide-line">
+            {laterDuties.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center gap-3 py-2.5">
+                <span className="w-28 text-sm font-semibold text-ink">{formatDate(s.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                <span className="flex-1 min-w-0 text-sm text-ink truncate">
+                  {hhmm(s.start_time)} {s.subject_name}, {s.class_name}
+                </span>
+                <Link to={`/faculty/lesson-plan/${s.id}`} className="btn-ghost btn-sm">
+                  Lesson plan
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <Modal isOpen={!!open} onClose={() => setOpen(null)} title={open?.kind === 'cover' ? open.s.subject_name : open?.e?.subject_name || ''} subtitle={open ? `${hhmm(open.start)}–${hhmm(open.end)}` : ''}>
+        {open?.kind === 'cover' ? (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <Meta label="Date">{formatDateLong(open.s.date)}</Meta>
+              <Meta label="Covering for">{open.s.absent_faculty_name}</Meta>
+              <Meta label="Class">
+                {open.s.class_name}
+                {open.s.section ? `, section ${open.s.section}` : ''}
+              </Meta>
+              <Meta label="Room">
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-ink-3" />
+                  {open.s.classroom || 'Not set'}
+                </span>
+              </Meta>
+            </dl>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge status={open.s.assignment?.is_acknowledged ? 'ACKNOWLEDGED' : 'AWAITING_ACK'} />
+              <Link to={`/faculty/lesson-plan/${open.s.id}`} className="btn-primary btn-sm ml-auto">
+                <BookOpen className="w-4 h-4" />
+                Open lesson plan
+              </Link>
+            </div>
+          </div>
+        ) : open ? (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <Meta label="Subject code">{open.e.subject_code}</Meta>
+              <Meta label="Department">{open.e.department_name}</Meta>
+              <Meta label="Class">
+                {open.e.class_name}
+                {open.e.section ? `, section ${open.e.section}` : ''}
+              </Meta>
+              <Meta label="Room">{open.e.classroom || 'Not set'}</Meta>
+            </dl>
+            {open.cover && (
+              <div className="panel p-3 text-sm flex flex-wrap items-center gap-2">
+                <span className="text-ink-2">On {formatDate(open.cover.date)} you are away:</span>
+                <Badge status={open.cover.status} />
+                {['APPROVED', 'ASSIGNED'].includes(open.cover.status) && (
+                  <Link to={`/faculty/lesson-plan/${open.cover.id}`} className="ml-auto font-semibold text-accent-ink hover:underline">
+                    Write a handover note
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
       </Modal>
     </div>
   )
 }
+
