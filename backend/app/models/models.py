@@ -95,7 +95,7 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    faculty = db.relationship('Faculty', backref='user', uselist=False)
+    faculty = db.relationship('Faculty', backref=db.backref('user', uselist=False), uselist=False)
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
