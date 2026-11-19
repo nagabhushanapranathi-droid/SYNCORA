@@ -1,119 +1,439 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   SYNCORA design tokens
+   Two independent identities share one semantic vocabulary:
+   - [data-theme="light"]  "Ribbon"   — Hello Kitty-inspired stationery: vanilla paper,
+                                         cocoa ink, cherry ribbon, dot-grid notebook.
+   - [data-theme="dark"]   "Midnight" — Kuromi-inspired gothic diary: plum-black pages,
+                                         lavender ink, stitched edges, scattered stars.
+   Colours are "R G B" triplets so Tailwind's /alpha modifiers work.
+   ========================================================================== */
+
+:root,
+[data-theme='light'] {
+  --canvas: 255 249 239;      /* vanilla cream */
+  --chrome: 255 253 249;      /* sidebar / top bar paper */
+  --surface: 255 255 255;     /* pure white sheets */
+  --surface-2: 255 245 232;   /* inset panels */
+  --surface-3: 251 236 219;   /* hover / selected */
+  --line: 240 226 210;
+  --line-strong: 224 204 182;
+
+  --ink: 81 65 63;            /* cocoa brown */
+  --ink-2: 117 99 95;
+  --ink-3: 150 132 128;
+
+  --accent: 201 70 83;        /* cherry, deepened for AA white text */
+  --accent-hover: 178 54 68;
+  --accent-ink: 176 56 69;
+  --accent-soft: 252 232 230;
+  --on-accent: 255 255 255;
+  --brand: 217 87 99;         /* #D95763 — bows and marks */
+  --brand-2: 244 166 166;     /* soft coral */
+
+  --ok: 185 216 194;          /* mint */
+  --ok-ink: 46 104 70;
+  --ok-soft: 233 244 236;
+  --warn: 245 217 130;        /* butter */
+  --warn-ink: 122 90 8;
+  --warn-soft: 253 244 212;
+  --info: 216 201 232;        /* lavender */
+  --info-ink: 104 82 148;
+  --info-soft: 242 236 249;
+  --danger: 180 45 60;
+  --danger-ink: 168 44 58;
+  --danger-soft: 251 230 230;
+  --on-danger: 255 255 255;
+  --focus: 201 70 83;
+
+  --r-sheet: 18px;
+  --r-panel: 12px;
+  --r-ctl: 10px;
+  --shadow-sheet: 0 1px 2px rgb(81 65 63 / 0.05), 0 10px 28px -16px rgb(81 65 63 / 0.22);
+  --shadow-pop: 0 22px 54px -20px rgb(81 65 63 / 0.38), 0 2px 6px rgb(81 65 63 / 0.06);
+  --rule-style: dotted;
+  --canvas-pattern: radial-gradient(rgb(81 65 63 / 0.075) 1px, transparent 1.3px);
+  --canvas-pattern-size: 22px 22px;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --canvas: 23 20 31;         /* #17141F */
+  --chrome: 18 15 25;
+  --surface: 33 28 43;        /* #211C2B */
+  --surface-2: 42 36 55;      /* #2A2437 */
+  --surface-3: 50 42 65;
+  --line: 68 57 80;           /* #443950 */
+  --line-strong: 94 80 112;
+
+  --ink: 247 241 250;
+  --ink-2: 194 183 208;
+  --ink-3: 150 138 167;
+
+  --accent: 216 201 232;      /* lavender is the action colour after dark */
+  --accent-hover: 232 222 243;
+  --accent-ink: 212 194 236;
+  --accent-soft: 50 41 68;
+  --on-accent: 31 23 43;
+  --brand: 244 166 166;       /* coral-pink skulls and bows */
+  --brand-2: 187 166 219;     /* soft purple */
+
+  --ok: 120 190 150;
+  --ok-ink: 152 214 177;
+  --ok-soft: 31 50 43;
+  --warn: 240 210 120;
+  --warn-ink: 240 212 128;
+  --warn-soft: 54 46 28;
+  --info: 187 166 219;
+  --info-ink: 200 182 232;
+  --info-soft: 45 37 66;
+  --danger: 244 150 158;
+  --danger-ink: 246 160 168;
+  --danger-soft: 60 30 40;
+  --on-danger: 42 18 24;
+  --focus: 216 201 232;
+
+  --r-sheet: 14px;
+  --r-panel: 10px;
+  --r-ctl: 8px;
+  --shadow-sheet: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 14px 32px -20px rgb(0 0 0 / 0.7);
+  --shadow-pop: 0 26px 64px -22px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --rule-style: dashed;
+  --canvas-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='%23D8C9E8' fill-opacity='0.045'%3E%3Cpath d='M24 18l1.6 4.4L30 24l-4.4 1.6L24 30l-1.6-4.4L18 24l4.4-1.6z'/%3E%3Cpath d='M98 74l1.1 3L102 78l-2.9 1.1L98 82l-1.1-2.9L94 78l2.9-1z'/%3E%3Ccircle cx='70' cy='30' r='1'/%3E%3Ccircle cx='120' cy='118' r='1.2'/%3E%3Ccircle cx='36' cy='104' r='0.9'/%3E%3Cpath d='M128 34a6 6 0 1 1-4.5-7.6 4.6 4.6 0 0 0 4.5 7.6z'/%3E%3C/g%3E%3C/svg%3E");
+  --canvas-pattern-size: 140px 140px;
+  color-scheme: dark;
+}
+
+/* Suppress transitions for the single frame in which the theme flips. */
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
+
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    font-family: 'Inter', sans-serif;
-    background-color: #FFF9EF;
-    color: #51413F;
+    @apply bg-canvas text-ink font-body antialiased;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    font-feature-settings: 'cv11', 'ss01';
+    background-image: var(--canvas-pattern);
+    background-size: var(--canvas-pattern-size);
+    background-attachment: fixed;
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Nunito Sans', 'DM Sans', sans-serif;
+    @apply font-heading text-ink;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  ::selection {
+    background: rgb(var(--accent) / 0.22);
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+  button,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator {
+    opacity: 0.6;
+    cursor: pointer;
+  }
+  [data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator,
+  [data-theme='dark'] input[type='time']::-webkit-calendar-picker-indicator {
+    filter: invert(0.85);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
 @layer components {
+  /* ---------- Surfaces ---------- */
+  .sheet {
+    @apply bg-surface border border-line rounded-sheet shadow-sheet relative;
+  }
+  .panel {
+    @apply bg-surface-2 rounded-panel;
+  }
+  /* Feature sheet: ribbon band (light) or stitched lining (dark). */
+  .sheet-feature {
+    @apply sheet overflow-hidden;
+  }
+  .sheet-feature::before {
+    content: '';
+    @apply absolute inset-x-0 top-0 h-1.5 bg-brand;
+  }
+  [data-theme='dark'] .sheet-feature::before {
+    @apply h-1 bg-brand-2;
+  }
+  [data-theme='dark'] .sheet-feature::after {
+    content: '';
+    position: absolute;
+    inset: 7px;
+    border: 1px dashed rgb(var(--line-strong) / 0.7);
+    border-radius: calc(var(--r-sheet) - 5px);
+    pointer-events: none;
+  }
+  .sheet-head {
+    @apply flex items-center justify-between gap-3 px-5 pt-4 pb-3;
+  }
+  .sheet-title {
+    @apply font-heading font-bold text-md text-ink;
+  }
+  .sheet-sub {
+    @apply text-sm text-ink-2;
+  }
+  .rule {
+    border-top: 1px var(--rule-style) rgb(var(--line-strong));
+  }
+  .rule-v {
+    border-left: 1px var(--rule-style) rgb(var(--line-strong));
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-ctl px-4 h-10 text-base font-semibold
+      transition-[background-color,border-color,color,box-shadow,transform] duration-150
+      disabled:opacity-50 disabled:cursor-not-allowed select-none whitespace-nowrap;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .btn-sm {
+    @apply h-8 px-3 text-sm gap-1.5;
+  }
+  .btn-lg {
+    @apply h-12 px-5 text-md;
+  }
   .btn-primary {
-    @apply bg-accent text-white px-4 py-2 rounded-xl font-semibold hover:bg-accent-dark transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-sm;
+    @apply btn bg-accent text-on-accent hover:bg-accent-hover;
+    box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.08);
   }
   .btn-secondary {
-    @apply bg-white text-accent px-4 py-2 rounded-xl font-medium border-2 border-coral/40 hover:border-accent hover:bg-coral/10 transition-all duration-200 inline-flex items-center justify-center gap-2;
+    @apply btn bg-surface text-ink border border-line-strong hover:border-accent/60 hover:text-accent-ink;
   }
   .btn-ghost {
-    @apply text-textSecondary px-4 py-2 rounded-xl font-medium hover:bg-cream hover:text-cocoa transition-all duration-200 inline-flex items-center justify-center gap-2;
+    @apply btn text-ink-2 hover:bg-surface-3 hover:text-ink;
   }
-  .card {
-    @apply bg-card rounded-2xl shadow-card border border-border p-6 relative overflow-hidden;
+  .btn-danger {
+    @apply btn bg-danger text-on-danger hover:opacity-90;
   }
-  .input-field {
-    @apply w-full border-2 border-border rounded-xl px-4 py-2.5 text-textPrimary bg-white focus:outline-none focus:ring-2 focus:ring-coral/30 focus:border-accent transition-all duration-200 text-sm;
+  .btn-danger-ghost {
+    @apply btn text-danger-ink hover:bg-danger-soft;
   }
-  .label {
-    @apply block text-sm font-semibold text-textPrimary mb-1;
+  .btn-icon {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-ctl text-ink-2 hover:bg-surface-3 hover:text-ink transition-colors;
   }
-  
-  /* Status badges with kawaii styling */
-  .badge-present { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-mint/30 text-success-dark border border-mint/50; }
-  .badge-absent { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-coral/20 text-accent border border-coral/40; }
-  .badge-pending { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-butter/30 text-warning-dark border border-butter/50; }
-  .badge-approved { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-mint/30 text-success-dark border border-mint/50; }
-  .badge-rejected { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-coral/20 text-accent border border-coral/40; }
-  .badge-suspended { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-lavender/30 text-info-dark border border-lavender/50; }
-  .badge-info { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-lavender/30 text-info-dark border border-lavender/50; }
-  
-  /* Sidebar styling */
-  .sidebar-link {
-    @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-textSecondary hover:bg-coral/10 hover:text-accent transition-all duration-200;
+
+  /* ---------- Forms ---------- */
+  .field-label {
+    @apply block text-sm font-semibold text-ink mb-1.5;
   }
-  .sidebar-link.active {
-    @apply bg-accent text-white hover:bg-accent-dark hover:text-white shadow-sm;
+  .field-hint {
+    @apply mt-1.5 text-xs text-ink-2;
   }
-  
-  /* Decorative elements */
-  .bow-decoration::before {
-    content: '🎀';
-    font-size: 0.75rem;
-    margin-right: 0.25rem;
+  .field-error {
+    @apply mt-1.5 text-xs font-medium text-danger-ink;
   }
-  
-  .star-accent::after {
-    content: '✦';
-    font-size: 0.5rem;
-    margin-left: 0.25rem;
-    color: #F5D982;
+  .input {
+    @apply w-full rounded-ctl border border-line-strong bg-surface px-3.5 h-10 text-base text-ink
+      placeholder:text-ink-3 transition-[border-color,box-shadow] duration-150
+      focus:outline-none focus:border-accent focus:shadow-focus disabled:opacity-60;
   }
-  
-  /* Section divider with bow */
-  .section-divider {
-    @apply relative border-t border-border my-6;
+  textarea.input {
+    @apply h-auto py-2.5 leading-relaxed;
   }
-  .section-divider::after {
-    content: '✿';
-    @apply absolute left-1/2 -translate-x-1/2 -top-2.5 bg-cream px-2 text-coral text-sm;
+  select.input {
+    @apply pr-9 appearance-none cursor-pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23968480' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
   }
-  
-  /* Card with decorative corner */
-  .card-decorated {
-    @apply card;
+  .check {
+    @apply w-4 h-4 rounded border-line-strong text-accent focus:ring-0 cursor-pointer;
+    accent-color: rgb(var(--accent));
   }
-  .card-decorated::before {
+
+  /* ---------- Chips (status stickers) ---------- */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap;
+  }
+  .chip-ok { @apply chip bg-ok-soft text-ok-ink border-ok/70; }
+  .chip-warn { @apply chip bg-warn-soft text-warn-ink border-warn/80; }
+  .chip-info { @apply chip bg-info-soft text-info-ink border-info/80; }
+  .chip-danger { @apply chip bg-danger-soft text-danger-ink border-danger/30; }
+  .chip-accent { @apply chip bg-accent-soft text-accent-ink border-accent/25; }
+  .chip-neutral { @apply chip bg-surface-2 text-ink-2 border-line-strong; }
+
+  /* ---------- Segmented tabs ---------- */
+  .seg {
+    @apply inline-flex flex-wrap gap-1 p-1 rounded-ctl bg-surface-2 border border-line;
+  }
+  .seg-item {
+    @apply px-3 h-8 rounded-[calc(var(--r-ctl)_-_3px)] text-sm font-semibold text-ink-2 hover:text-ink transition-colors inline-flex items-center gap-1.5;
+  }
+  .seg-item[aria-selected='true'],
+  .seg-item[aria-pressed='true'] {
+    @apply bg-surface text-ink shadow-sheet;
+  }
+  [data-theme='dark'] .seg-item[aria-selected='true'],
+  [data-theme='dark'] .seg-item[aria-pressed='true'] {
+    @apply bg-surface-3 text-accent-ink;
+  }
+
+  /* ---------- Tables ---------- */
+  .tbl {
+    @apply w-full text-left border-collapse;
+  }
+  .tbl th {
+    @apply px-5 py-3 text-xs font-semibold text-ink-2 bg-surface-2 border-b border-line whitespace-nowrap;
+  }
+  .tbl td {
+    @apply px-5 py-3.5 border-b border-line align-middle;
+  }
+  .tbl tbody tr {
+    @apply transition-colors hover:bg-surface-2/60;
+  }
+  .tbl tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* ---------- Navigation ---------- */
+  .nav-link {
+    @apply relative flex items-center gap-3 h-10 pl-5 pr-3 mx-3 rounded-ctl text-base font-medium text-ink-2
+      hover:bg-surface-3 hover:text-ink transition-colors;
+  }
+  .nav-link.active {
+    @apply bg-accent-soft text-accent-ink font-semibold;
+  }
+  /* The ribbon bookmark: a notched tail marking the page you are on. */
+  .nav-link.active::before {
     content: '';
-    @apply absolute top-0 right-0 w-16 h-16;
-    background: linear-gradient(135deg, transparent 50%, rgba(244, 166, 166, 0.08) 50%);
-    border-radius: 0 1rem 0 0;
+    position: absolute;
+    left: -12px;
+    top: -2px;
+    width: 7px;
+    height: calc(100% + 8px);
+    background: rgb(var(--brand));
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
   }
-  
-  /* AI-generated content marker */
-  .ai-content {
-    @apply relative pl-4 border-l-2 border-lavender;
+  [data-theme='dark'] .nav-link.active {
+    @apply bg-surface-3;
   }
-  .ai-content::before {
-    content: '✦';
-    @apply absolute -left-2 top-0 bg-cream text-butter text-xs;
+  [data-theme='dark'] .nav-link.active::before {
+    background: rgb(var(--accent));
   }
-  
-  /* Stat card hover effect */
-  .stat-card-hover {
-    @apply transition-all duration-300 hover:shadow-card-hover hover:-translate-y-0.5;
+
+  /* ---------- Avatars ---------- */
+  .avatar {
+    @apply inline-flex items-center justify-center rounded-full font-heading font-bold shrink-0 bg-surface-3 text-ink-2 border border-line;
   }
-  
-  /* Empty state styling */
-  .empty-state-kawaii {
-    @apply text-center py-8;
+
+  /* ---------- Grounding markers (data provenance) ---------- */
+  .ground-verified {
+    @apply border border-ok/80 bg-ok-soft;
+  }
+  .ground-ai {
+    @apply border border-dashed border-info bg-info-soft;
+  }
+  .ground-unverified {
+    @apply border border-warn bg-warn-soft;
+    background-image: repeating-linear-gradient(135deg, transparent 0 10px, rgb(var(--warn) / 0.16) 10px 12px);
+  }
+  .ground-calc {
+    @apply border border-line-strong bg-surface-2;
+  }
+
+  /* ---------- Skeleton ---------- */
+  .skeleton {
+    @apply rounded-panel bg-surface-3;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* ---------- Markdown (assistant + plans) ---------- */
+  .md {
+    @apply text-base leading-relaxed text-ink;
+  }
+  .md > * + * { margin-top: 0.6rem; }
+  .md h1, .md h2, .md h3, .md h4 { @apply font-heading font-bold text-ink; margin-top: 0.9rem; }
+  .md h1 { @apply text-lg; }
+  .md h2 { @apply text-md; }
+  .md h3, .md h4 { @apply text-base; }
+  .md ul { @apply list-disc pl-5 space-y-1; }
+  .md ol { @apply list-decimal pl-5 space-y-1; }
+  .md li::marker { color: rgb(var(--ink-3)); }
+  .md strong { @apply font-semibold text-ink; }
+  .md a { @apply text-accent-ink underline underline-offset-2; }
+  .md code { @apply rounded px-1.5 py-0.5 text-[0.85em] bg-surface-3 text-ink font-mono; }
+  .md pre { @apply rounded-panel bg-surface-3 p-3 overflow-x-auto text-xs; }
+  .md pre code { @apply bg-transparent p-0; }
+  .md blockquote { @apply border-l-2 border-warn pl-3 text-ink-2; }
+  .md hr { border: 0; border-top: 1px var(--rule-style) rgb(var(--line-strong)); margin: 0.75rem 0; }
+  .md table { @apply w-full text-sm border-collapse; }
+  .md th { @apply text-left font-semibold text-ink-2 px-2.5 py-1.5 border-b border-line bg-surface-2; }
+  .md td { @apply px-2.5 py-1.5 border-b border-line align-top; }
+
+  /* Legacy aliases kept so any older markup still follows the theme. */
+  .card { @apply sheet p-6; }
+  .input-field { @apply input; }
+  .label { @apply field-label; }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Scrollbars follow the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-strong)) transparent;
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--line-strong));
+  border-radius: 9px;
+  border: 2px solid rgb(var(--canvas));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Custom scrollbar with SYNCORA theme */
-* { box-sizing: border-box; }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #FFF9EF; }
-::-webkit-scrollbar-thumb { background: #F4A6A6; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #D95763; }
-
-/* Subtle background pattern */
-.bg-pattern {
-  background-image: radial-gradient(circle, #F0E6DA 1px, transparent 1px);
-  background-size: 24px 24px;
+/* Print: lesson plans and reports print as clean documents. */
+@media print {
+  @page { margin: 14mm; }
+  html, body {
+    background: #fff !important;
+    background-image: none !important;
+    color: #222 !important;
+  }
+  [data-theme] {
+    --canvas: 255 255 255; --surface: 255 255 255; --surface-2: 248 248 248; --surface-3: 240 240 240;
+    --ink: 30 30 30; --ink-2: 70 70 70; --ink-3: 110 110 110; --line: 220 220 220; --line-strong: 190 190 190;
+  }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .sheet, .sheet-feature { box-shadow: none !important; break-inside: avoid; }
+  .print-break { break-before: page; }
+  main { overflow: visible !important; padding: 0 !important; }
 }
+.print-only { display: none; }

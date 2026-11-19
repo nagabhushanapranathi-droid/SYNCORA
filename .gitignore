@@ -13,6 +13,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# ...but keep the frontend's shared helpers (src/lib) under version control
+!frontend/src/lib/
 parts/
 sdist/
 var/
