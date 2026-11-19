@@ -6,6 +6,12 @@ from app.ai.gemini_service import (
     explain_decision,
     generate_daily_report,
 )
+from app.ai.provider_manager import (
+    ai_manager,
+    AIProviderManager,
+    get_recent_errors,
+    get_usage_metrics,
+)
 
 __all__ = [
     'get_client',
@@ -14,4 +20,8 @@ __all__ = [
     'chat_assistant',
     'explain_decision',
     'generate_daily_report',
+    'ai_manager',
+    'AIProviderManager',
+    'get_recent_errors',
+    'get_usage_metrics',
 ]

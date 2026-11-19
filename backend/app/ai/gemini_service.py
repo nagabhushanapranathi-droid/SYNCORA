@@ -18,23 +18,33 @@ def get_client():
 
 
 def generate_text(prompt: str, system_instruction: Optional[str] = None) -> str:
-    """Helper to generate text using gemini-2.0-flash."""
-    from google.genai import types
-    
-    client = get_client()
-    config = types.GenerateContentConfig(
-        temperature=0.7,
-        max_output_tokens=1024,
-    )
-    if system_instruction:
-        config.system_instruction = system_instruction
-    
-    response = client.models.generate_content(
-        model='gemini-2.0-flash',
-        config=config,
-        contents=prompt
-    )
-    return response.text.strip() if response and response.text else ''
+    """Helper to generate text using AI Provider Manager with fallback."""
+    from app.ai.provider_manager import ai_manager
+    try:
+        text, provider, model = ai_manager.generate_with_fallback(
+            prompt=prompt,
+            system_instruction=system_instruction
+        )
+        return text
+    except Exception as e:
+        # Check if direct client works as final attempt
+        try:
+            client = get_client()
+            from google.genai import types
+            config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=1024,
+            )
+            if system_instruction:
+                config.system_instruction = system_instruction
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                config=config,
+                contents=prompt
+            )
+            return response.text.strip() if response and response.text else ''
+        except Exception:
+            raise e
 
 
 def explain_recommendation(request_data: Dict[str, Any], candidates: List[Dict[str, Any]]) -> str:
