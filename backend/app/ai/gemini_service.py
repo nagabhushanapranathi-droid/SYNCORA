@@ -4,51 +4,42 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+from app.ai.provider_manager import ai_manager
+from app.ai.model_router import TaskType
+
 logger = logging.getLogger(__name__)
 
 
 def get_client():
-    """Create and return a Gemini API client using the google-genai SDK."""
-    api_key = os.environ.get('GOOGLE_API_KEY', '').strip()
-    if not api_key:
-        raise ValueError('GOOGLE_API_KEY not configured. Please add it to your environment or .env file.')
-    
-    from google import genai
-    return genai.Client(api_key=api_key)
+    """
+    Deprecated compatibility helper.
+    In Phase 2, SYNCORA communicates exclusively through FreeLLMAPI as the central gateway.
+    Direct Google Gemini SDK calls are disabled.
+    """
+    raise NotImplementedError(
+        "Direct Google GenAI client is deprecated in Phase 2. "
+        "All AI interactions are routed centrally through FreeLLMAPI gateway."
+    )
 
 
-def generate_text(prompt: str, system_instruction: Optional[str] = None) -> str:
-    """Helper to generate text using AI Provider Manager with fallback."""
-    from app.ai.provider_manager import ai_manager
-    try:
-        text, provider, model = ai_manager.generate_with_fallback(
-            prompt=prompt,
-            system_instruction=system_instruction
-        )
-        return text
-    except Exception as e:
-        # Check if direct client works as final attempt
-        try:
-            client = get_client()
-            from google.genai import types
-            config = types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=1024,
-            )
-            if system_instruction:
-                config.system_instruction = system_instruction
-            response = client.models.generate_content(
-                model='gemini-2.0-flash',
-                config=config,
-                contents=prompt
-            )
-            return response.text.strip() if response and response.text else ''
-        except Exception:
-            raise e
+def generate_text(
+    prompt: str,
+    system_instruction: Optional[str] = None,
+    task_type: str = TaskType.BALANCED
+) -> str:
+    """
+    Generate text using the centralized FreeLLMAPI gateway with task-specific model routing.
+    """
+    text, provider, model = ai_manager.generate_with_fallback(
+        prompt=prompt,
+        system_instruction=system_instruction,
+        task_type=task_type
+    )
+    return text
 
 
 def explain_recommendation(request_data: Dict[str, Any], candidates: List[Dict[str, Any]]) -> str:
-    """Feature A: Explain why the top candidate was recommended."""
+    """Explain why the top candidate was recommended for a substitution slot."""
     if not candidates:
         return (
             "No eligible substitute faculty could be identified for this session. "
@@ -82,9 +73,9 @@ def explain_recommendation(request_data: Dict[str, Any], candidates: List[Dict[s
     )
     
     try:
-        return generate_text(prompt, system_instruction=system_instruction)
+        return generate_text(prompt, system_instruction=system_instruction, task_type=TaskType.FAST)
     except Exception as e:
-        logger.warning(f"Gemini API unavailable for explain_recommendation: {e}")
+        logger.warning(f"FreeLLMAPI unavailable for explain_recommendation: {e}. Using deterministic explanation.")
         subject_str = f" to teach {request_data.get('subject_name')}" if top.get('teaches_subject') else ""
         return (
             f"Recommended {top.get('faculty_name')} ({top.get('designation')}) with a suitability score of "
@@ -117,9 +108,9 @@ def chat_assistant(user_message: str, context_data: Dict[str, Any]) -> str:
     )
     
     try:
-        return generate_text(prompt, system_instruction=system_instruction)
+        return generate_text(prompt, system_instruction=system_instruction, task_type=TaskType.BALANCED)
     except Exception as e:
-        logger.warning(f"AI Provider unavailable for chat_assistant: {e}. Executing deterministic institutional assistant.")
+        logger.warning(f"FreeLLMAPI unavailable for chat_assistant: {e}. Executing deterministic institutional assistant.")
         lines = ["### SYNCORA Academic Assistant (Grounded Mode)"]
         q_lower = user_message.lower()
 
@@ -225,7 +216,7 @@ def chat_assistant(user_message: str, context_data: Dict[str, Any]) -> str:
 
 
 def explain_decision(selected_candidate: Dict[str, Any], all_candidates: List[Dict[str, Any]], request_data: Dict[str, Any]) -> str:
-    """Feature C: Explain why a specific candidate was selected over others."""
+    """Explain why a specific candidate was selected over others."""
     prompt = (
         "Provide a detailed rationale explaining why the selected faculty candidate was assigned to this substitution "
         "slot, comparing their qualifications and workload with other potential candidates.\n\n"
@@ -241,9 +232,9 @@ def explain_decision(selected_candidate: Dict[str, Any], all_candidates: List[Di
     )
     
     try:
-        return generate_text(prompt, system_instruction=system_instruction)
+        return generate_text(prompt, system_instruction=system_instruction, task_type=TaskType.FAST)
     except Exception as e:
-        logger.warning(f"Gemini API unavailable for explain_decision: {e}")
+        logger.warning(f"FreeLLMAPI unavailable for explain_decision: {e}. Using deterministic explanation.")
         return (
             f"Candidate {selected_candidate.get('faculty_name')} was selected with score "
             f"{selected_candidate.get('score', 0)}/100 and current substitution workload of "
@@ -253,7 +244,7 @@ def explain_decision(selected_candidate: Dict[str, Any], all_candidates: List[Di
 
 
 def generate_daily_report(stats_data: Dict[str, Any]) -> str:
-    """Feature D: Narrative report from real daily stats."""
+    """Generate executive daily operational report from real statistics."""
     prompt = (
         "Generate a comprehensive, executive daily report for the academic dean based on the following SYNCORA metrics. "
         "Structure the report with: Executive Summary, Attendance & Coverage, Substitution Workload Balance, "
@@ -266,9 +257,9 @@ def generate_daily_report(stats_data: Dict[str, Any]) -> str:
     )
     
     try:
-        return generate_text(prompt, system_instruction=system_instruction)
+        return generate_text(prompt, system_instruction=system_instruction, task_type=TaskType.ANALYTICS)
     except Exception as e:
-        logger.warning(f"Gemini API unavailable for generate_daily_report: {e}")
+        logger.warning(f"FreeLLMAPI unavailable for generate_daily_report: {e}. Using deterministic briefing.")
         today_str = datetime.now().strftime('%B %d, %Y')
         return (
             f"SYNCORA Daily Operations Briefing — {today_str}\n\n"

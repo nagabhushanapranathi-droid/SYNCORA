@@ -11,7 +11,21 @@ from app.ai.provider_manager import (
     AIProviderManager,
     get_recent_errors,
     get_usage_metrics,
+    mask_secret,
 )
+from app.ai.providers import (
+    BaseAIProvider,
+    FreeLLMAPIProvider,
+    FreeLLMAPIError,
+    FreeLLMAPIConnectionError,
+    FreeLLMAPIAuthError,
+    FreeLLMAPITimeoutError,
+    FreeLLMAPIRateLimitError,
+    FreeLLMAPIServerError,
+    FreeLLMAPIMalformedResponseError,
+    mask_api_key,
+)
+from app.ai.model_router import router, TaskType
 
 __all__ = [
     'get_client',
@@ -24,4 +38,17 @@ __all__ = [
     'AIProviderManager',
     'get_recent_errors',
     'get_usage_metrics',
+    'mask_secret',
+    'BaseAIProvider',
+    'FreeLLMAPIProvider',
+    'FreeLLMAPIError',
+    'FreeLLMAPIConnectionError',
+    'FreeLLMAPIAuthError',
+    'FreeLLMAPITimeoutError',
+    'FreeLLMAPIRateLimitError',
+    'FreeLLMAPIServerError',
+    'FreeLLMAPIMalformedResponseError',
+    'mask_api_key',
+    'router',
+    'TaskType',
 ]

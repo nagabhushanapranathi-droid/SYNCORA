@@ -207,19 +207,59 @@ def report_alias():
 @ai_bp.route('/config', methods=['GET'])
 @require_auth
 def get_ai_config_endpoint():
-    """Retrieve AI configuration, provider statuses, usage metrics, and recent errors (Admin only)."""
+    """Retrieve AI configuration, provider statuses, FreeLLMAPI gateway telemetry, usage metrics, and recent errors (Admin only)."""
     from flask import g
     from app.ai.provider_manager import ai_manager, get_recent_errors, get_usage_metrics
     if g.current_user.role != 'admin':
         return error_response('Administrator privileges required to view AI configuration', status=403)
 
     statuses = ai_manager.get_all_provider_status()
+    gateway_data = ai_manager.get_gateway_telemetry()
+
     return success_response(data={
         'primary_provider': ai_manager.get_primary_provider_name(),
         'fallback_provider': ai_manager.get_fallback_provider_name(),
+        'gateway': gateway_data,
         'providers': statuses,
         'recent_errors': get_recent_errors(limit=20),
         'usage_metrics': get_usage_metrics()
+    })
+
+
+@ai_bp.route('/models', methods=['GET'])
+@require_auth
+def get_ai_models_endpoint():
+    """Dynamically discover available models from FreeLLMAPI gateway (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    refresh = request.args.get('refresh', 'false').lower() == 'true'
+    models = ai_manager.gateway.get_available_models(force_refresh=refresh)
+    return success_response(data={
+        'models': models,
+        'count': len(models),
+        'default_model': ai_manager.gateway.get_default_model(),
+        'cached': not refresh
+    })
+
+
+@ai_bp.route('/test-connection', methods=['POST'])
+@require_auth
+@csrf_protect
+def test_connection_endpoint():
+    """Execute live connectivity audit against FreeLLMAPI gateway (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    is_avail, msg, telemetry = ai_manager.gateway.check_availability()
+    return success_response(data={
+        'success': is_avail,
+        'message': msg,
+        'telemetry': telemetry
     })
 
 
@@ -227,7 +267,7 @@ def get_ai_config_endpoint():
 @require_auth
 @csrf_protect
 def update_ai_config_endpoint():
-    """Update primary/fallback AI provider settings (Admin only). Secrets are protected server-side."""
+    """Update AI gateway settings and model selections (Admin only). Secrets are protected server-side."""
     import os
     from flask import g
     from app import db
@@ -238,24 +278,37 @@ def update_ai_config_endpoint():
     data = request.get_json(silent=True) or {}
     primary = data.get('primary_provider')
     fallback = data.get('fallback_provider')
+    default_model = data.get('default_model')
+    timeout_val = data.get('timeout')
+    retries_val = data.get('max_retries')
+
+    def _upsert_config(key, val, desc):
+        conf = AIConfig.query.filter_by(key=key).first()
+        if not conf:
+            conf = AIConfig(key=key, value=str(val), description=desc)
+            db.session.add(conf)
+        else:
+            conf.value = str(val)
 
     if primary:
         os.environ['AI_PRIMARY_PROVIDER'] = str(primary).strip().lower()
-        conf = AIConfig.query.filter_by(key='AI_PRIMARY_PROVIDER').first()
-        if not conf:
-            conf = AIConfig(key='AI_PRIMARY_PROVIDER', value=primary, description='Primary AI provider')
-            db.session.add(conf)
-        else:
-            conf.value = primary
+        _upsert_config('AI_PRIMARY_PROVIDER', primary, 'Primary AI provider')
 
-    if fallback:
+    if fallback is not None:
         os.environ['AI_FALLBACK_PROVIDER'] = str(fallback).strip().lower()
-        conf_fb = AIConfig.query.filter_by(key='AI_FALLBACK_PROVIDER').first()
-        if not conf_fb:
-            conf_fb = AIConfig(key='AI_FALLBACK_PROVIDER', value=fallback, description='Fallback AI provider')
-            db.session.add(conf_fb)
-        else:
-            conf_fb.value = fallback
+        _upsert_config('AI_FALLBACK_PROVIDER', fallback, 'Fallback AI provider')
+
+    if default_model:
+        os.environ['FREELLMAPI_DEFAULT_MODEL'] = str(default_model).strip()
+        _upsert_config('FREELLMAPI_DEFAULT_MODEL', default_model, 'Default FreeLLMAPI Model')
+
+    if timeout_val:
+        os.environ['FREELLMAPI_TIMEOUT'] = str(timeout_val).strip()
+        _upsert_config('FREELLMAPI_TIMEOUT', timeout_val, 'FreeLLMAPI timeout seconds')
+
+    if retries_val is not None:
+        os.environ['FREELLMAPI_MAX_RETRIES'] = str(retries_val).strip()
+        _upsert_config('FREELLMAPI_MAX_RETRIES', retries_val, 'FreeLLMAPI max retries')
 
     db.session.commit()
     return success_response(message='AI configuration updated successfully')
