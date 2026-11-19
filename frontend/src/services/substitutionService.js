@@ -39,6 +39,36 @@ export const substitutionService = {
   getCandidates: async (id) => {
     const res = await api.get(`/substitutions/${id}/candidates`)
     return res.data
+  },
+
+  getLessonPlan: async (id) => {
+    const res = await api.get(`/substitutions/${id}/lesson-plan`)
+    return res.data
+  },
+
+  generateLessonPlan: async (id, force = false) => {
+    const res = await api.post(`/substitutions/${id}/lesson-plan/generate`, { force })
+    return res.data
+  },
+
+  updateLessonPlan: async (id, data) => {
+    const res = await api.put(`/substitutions/${id}/lesson-plan`, data)
+    return res.data
+  },
+
+  recordProgress: async (id, data) => {
+    const res = await api.post(`/substitutions/${id}/progress`, data)
+    return res.data
+  },
+
+  submitHandover: async (id, data) => {
+    const res = await api.post(`/substitutions/${id}/handover`, data)
+    return res.data
+  },
+
+  getAcademicContext: async (id) => {
+    const res = await api.get(`/substitutions/${id}/academic-context`)
+    return res.data
   }
 }
 

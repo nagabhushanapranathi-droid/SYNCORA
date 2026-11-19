@@ -359,7 +359,7 @@ def format_markdown_lesson_plan(plan_dict: Dict[str, Any], context: Dict[str, An
 
 def generate_lesson_plan(
     substitution_request_id: int,
-    user_id: int,
+    user_id: Optional[int] = None,
     force_regenerate: bool = False
 ) -> LessonPlan:
     """

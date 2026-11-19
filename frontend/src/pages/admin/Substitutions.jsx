@@ -21,6 +21,7 @@ import Modal from '../../components/Modal'
 import Badge from '../../components/Badge'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import EmptyState from '../../components/EmptyState'
+import LessonPlanModal from '../../components/LessonPlanModal'
 import { substitutionService } from '../../services/substitutionService'
 import { facultyService } from '../../services/facultyService'
 import { useToast } from '../../context/ToastContext'
@@ -44,6 +45,7 @@ export default function Substitutions() {
   const [manualFacultyId, setManualFacultyId] = useState('')
   const [manualReason, setManualReason] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [selectedPlanSubId, setSelectedPlanSubId] = useState(null)
 
   const toast = useToast()
 
@@ -451,6 +453,15 @@ export default function Substitutions() {
                     {/* Action Buttons Toolbar */}
                     <div className="pt-4 border-t border-border flex flex-wrap items-center justify-end gap-3">
                       <button
+                        onClick={() => setSelectedPlanSubId(sub.id)}
+                        className="btn-secondary text-xs inline-flex items-center gap-1.5"
+                        title="View or edit 12-point structured lesson plan and verified progress"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-accent" />
+                        Lesson Plan
+                      </button>
+
+                      <button
                         onClick={() => handleSuspend(sub.id)}
                         disabled={actionLoading}
                         className="btn-ghost text-xs text-error hover:bg-error/10 hover:text-error"
@@ -552,6 +563,14 @@ export default function Substitutions() {
           </div>
         </form>
       </Modal>
+
+      {/* Structured Lesson Plan & Academic Continuity Modal */}
+      <LessonPlanModal
+        isOpen={!!selectedPlanSubId}
+        onClose={() => setSelectedPlanSubId(null)}
+        substitutionId={selectedPlanSubId}
+        readOnly={false}
+      />
     </div>
   )
 }

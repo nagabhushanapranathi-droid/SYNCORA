@@ -24,6 +24,9 @@ import {
   Users,
   Download,
   Calendar,
+  BookOpen,
+  AlertTriangle,
+  FileCheck,
 } from 'lucide-react'
 import StatCard from '../../components/StatCard'
 import Badge from '../../components/Badge'
@@ -46,6 +49,7 @@ export default function Reports() {
   const [statusData, setStatusData] = useState([])
   const [trendData, setTrendData] = useState([])
   const [workloadData, setWorkloadData] = useState([])
+  const [continuityData, setContinuityData] = useState(null)
 
   // AI Daily Report
   const [aiReport, setAiReport] = useState('')
@@ -56,9 +60,10 @@ export default function Reports() {
   const loadReportData = async () => {
     setLoading(true)
     try {
-      const [statsRes, workloadRes] = await Promise.allSettled([
+      const [statsRes, workloadRes, analyticsRes] = await Promise.allSettled([
         reportService.getStats(),
         reportService.getWorkload(),
+        reportService.getAnalytics(),
       ])
 
       if (statsRes.status === 'fulfilled') {
@@ -80,6 +85,10 @@ export default function Reports() {
           ? workloadRes.value
           : workloadRes.value?.faculty_workload || []
         setWorkloadData(wl.slice(0, 10))
+      }
+
+      if (analyticsRes.status === 'fulfilled') {
+        setContinuityData(analyticsRes.value)
       }
     } catch {
       toast.error('Unable to fetch analytics telemetry.')
@@ -239,6 +248,98 @@ export default function Reports() {
             Click 'Generate Daily Report' above to synthesize today's institutional briefing.
           </p>
         )}
+      </div>
+
+      {/* Academic Continuity & GenAI Telemetry */}
+      <div className="card space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center border border-accent/30 shadow-sm">
+              <BookOpen className="w-5 h-5 stroke-[2]" />
+            </div>
+            <div>
+              <h3 className="font-heading font-bold text-base text-textPrimary">
+                Academic Continuity & GenAI Telemetry
+              </h3>
+              <p className="text-xs text-textSecondary">
+                Audit metrics tracking substitute lesson plan generation, syllabus progress tracking, and AI provider routing.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Continuity Metrics Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl border border-border bg-background">
+            <span className="text-[11px] text-textSecondary block">Structured Lesson Plans</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="font-heading font-bold text-xl text-textPrimary">
+                {continuityData?.academic_continuity?.total_lesson_plans ?? 0}
+              </span>
+              <span className="text-[11px] text-accent font-medium">12-Point Plans</span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-border bg-background">
+            <span className="text-[11px] text-textSecondary block">Continuity Warning Rate</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className={`font-heading font-bold text-xl ${
+                (continuityData?.academic_continuity?.continuity_warning_rate_pct || 0) > 25
+                  ? 'text-error'
+                  : 'text-warning'
+              }`}>
+                {continuityData?.academic_continuity?.continuity_warning_rate_pct ?? 0}%
+              </span>
+              <span className="text-[11px] text-textSecondary">
+                ({continuityData?.academic_continuity?.plans_with_continuity_warnings ?? 0} flagged)
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-border bg-background">
+            <span className="text-[11px] text-textSecondary block">Verified Progress Logs</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="font-heading font-bold text-xl text-success">
+                {continuityData?.academic_continuity?.verified_progress_records ?? 0}
+              </span>
+              <span className="text-[11px] text-textSecondary">
+                / {continuityData?.academic_continuity?.lesson_progress_records ?? 0} total
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl border border-border bg-background">
+            <span className="text-[11px] text-textSecondary block">Faculty Handover Notes</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="font-heading font-bold text-xl text-info">
+                {continuityData?.academic_continuity?.handover_notes_logged ?? 0}
+              </span>
+              <span className="text-[11px] text-textSecondary">Logged Briefings</span>
+            </div>
+          </div>
+        </div>
+
+        {/* AI Routing Telemetry Sub-panel */}
+        <div className="p-3.5 rounded-xl border border-border bg-secondary/15 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-textPrimary">Active AI Engine:</span>
+            <span className="px-2.5 py-0.5 rounded-full font-bold bg-accent text-white uppercase text-[10px]">
+              {continuityData?.ai_generation?.active_primary_provider || 'Google Gemini'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-6 text-textSecondary">
+            <span>
+              Invocations: <strong className="text-textPrimary font-mono">{continuityData?.ai_generation?.ai_requests ?? 0}</strong>
+            </span>
+            <span>
+              Successes: <strong className="text-success font-mono">{continuityData?.ai_generation?.ai_successes ?? 0}</strong>
+            </span>
+            <span>
+              Failovers: <strong className="text-warning font-mono">{continuityData?.ai_generation?.ai_fallbacks_triggered ?? 0}</strong>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Recharts Section */}

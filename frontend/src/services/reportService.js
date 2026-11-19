@@ -14,6 +14,11 @@ export const reportService = {
   getSystemStatus: async () => {
     const res = await api.get('/reports/system-status')
     return res.data
+  },
+
+  getAnalytics: async (params = {}) => {
+    const res = await api.get('/reports/analytics', { params })
+    return res.data
   }
 }
 

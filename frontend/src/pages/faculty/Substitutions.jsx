@@ -9,11 +9,14 @@ import {
   Check,
   AlertCircle,
   RefreshCw,
+  Sparkles,
+  BookOpen,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import Badge from '../../components/Badge'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import EmptyState from '../../components/EmptyState'
+import LessonPlanModal from '../../components/LessonPlanModal'
 import { substitutionService } from '../../services/substitutionService'
 import { useToast } from '../../context/ToastContext'
 
@@ -23,6 +26,7 @@ export default function FacultySubstitutions() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [ackLoadingId, setAckLoadingId] = useState(null)
+  const [selectedPlanSubId, setSelectedPlanSubId] = useState(null)
 
   const toast = useToast()
 
@@ -191,32 +195,47 @@ export default function FacultySubstitutions() {
                 </div>
 
                 {/* Footer Action */}
-                <div className="pt-3 border-t border-border flex items-center justify-between">
-                  <span className="text-[11px] text-textSecondary">
-                    {canAck ? 'Acknowledgment Required' : 'Duty Logged'}
-                  </span>
+                <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    onClick={() => setSelectedPlanSubId(sub.id)}
+                    className="btn-secondary text-xs py-1 px-2.5 inline-flex items-center gap-1.5"
+                    title="View 12-point structured substitute lesson plan, notes, and log verified progress"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-accent" />
+                    Lesson Plan & Progress
+                  </button>
 
-                  {canAck ? (
-                    <button
-                      onClick={() => handleAcknowledge(sub.id)}
-                      disabled={ackLoadingId === sub.id}
-                      className="btn-primary text-xs py-1.5 px-3.5 shadow-sm inline-flex items-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      {ackLoadingId === sub.id ? 'Acknowledging...' : 'Acknowledge Duty'}
-                    </button>
-                  ) : (
-                    <span className="text-xs font-semibold text-success inline-flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Acknowledged
-                    </span>
-                  )}
+                  <div>
+                    {canAck ? (
+                      <button
+                        onClick={() => handleAcknowledge(sub.id)}
+                        disabled={ackLoadingId === sub.id}
+                        className="btn-primary text-xs py-1.5 px-3.5 shadow-sm inline-flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {ackLoadingId === sub.id ? 'Acknowledging...' : 'Acknowledge Duty'}
+                      </button>
+                    ) : (
+                      <span className="text-xs font-semibold text-success inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Acknowledged
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )
           })}
         </div>
       )}
+
+      {/* Structured Lesson Plan & Academic Continuity Modal */}
+      <LessonPlanModal
+        isOpen={!!selectedPlanSubId}
+        onClose={() => setSelectedPlanSubId(null)}
+        substitutionId={selectedPlanSubId}
+        readOnly={false}
+      />
     </div>
   )
 }

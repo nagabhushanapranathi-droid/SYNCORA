@@ -8,10 +8,14 @@ from app.models.models import (
     SubstitutionAssignment,
     Absence,
     Timetable,
+    LessonPlan,
+    LessonProgress,
+    HandoverNote,
 )
 from app.utils.auth import require_auth
 from app.utils.helpers import success_response
 from app.algorithms.allocation import get_substitution_count
+from app.ai.provider_manager import AIProviderManager, _USAGE_METRICS
 
 reports_bp = Blueprint('reports', __name__)
 
@@ -220,6 +224,37 @@ def get_advanced_analytics():
         {'hour': '15:00 - 16:00', 'affected_count': 2},
     ]
 
+    # 6. Academic Continuity & GenAI Telemetry
+    total_plans = LessonPlan.query.count()
+    warning_plans = LessonPlan.query.filter_by(has_academic_continuity_warning=True).count()
+    warning_rate = round((warning_plans / total_plans * 100), 1) if total_plans > 0 else 0.0
+    total_prog = LessonProgress.query.count()
+    verified_prog = LessonProgress.query.filter_by(is_verified=True).count()
+    handover_count = HandoverNote.query.count()
+
+    ai_mgr = AIProviderManager()
+    total_ai_reqs = sum(m.get('total_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    total_ai_succ = sum(m.get('successful_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    total_ai_fail = sum(m.get('failed_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    total_fallbacks = _USAGE_METRICS.get('fallbacks_triggered', 0)
+
+    academic_continuity = {
+        'total_lesson_plans': total_plans,
+        'plans_with_continuity_warnings': warning_plans,
+        'continuity_warning_rate_pct': warning_rate,
+        'lesson_progress_records': total_prog,
+        'verified_progress_records': verified_prog,
+        'handover_notes_logged': handover_count
+    }
+
+    ai_generation = {
+        'active_primary_provider': ai_mgr.get_primary_provider_name().upper(),
+        'ai_requests': total_ai_reqs,
+        'ai_successes': total_ai_succ,
+        'ai_failures': total_ai_fail,
+        'ai_fallbacks_triggered': total_fallbacks
+    }
+
     return success_response(data={
         'date_range': {'start': start_d.isoformat(), 'end': end_d.isoformat()},
         'filter_department_id': dept_id,
@@ -228,6 +263,8 @@ def get_advanced_analytics():
         'department_comparison': department_comparison,
         'workload_distribution': workload_distribution,
         'frequently_affected_slots': affected_slots,
+        'academic_continuity': academic_continuity,
+        'ai_generation': ai_generation,
         'summary': {
             'total_present_range': total_present_range,
             'total_absent_range': total_absent_range,

@@ -14,6 +14,21 @@ export const aiService = {
   generateReport: async (params = {}) => {
     const res = await api.post('/ai/report', params)
     return res.data
+  },
+
+  getConfig: async () => {
+    const res = await api.get('/ai/config')
+    return res.data
+  },
+
+  updateConfig: async (data) => {
+    const res = await api.post('/ai/config', data)
+    return res.data
+  },
+
+  testProvider: async (provider) => {
+    const res = await api.post('/ai/test-provider', { provider })
+    return res.data
   }
 }
 
