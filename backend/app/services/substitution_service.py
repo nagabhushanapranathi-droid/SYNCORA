@@ -133,8 +133,24 @@ def approve_request(request_id: int, admin_user_id: int) -> SubstitutionAssignme
         assignment.acknowledged_at = None
         
     sub_req.status = 'APPROVED'
-    notify_faculty_assignment(rec_id, sub_req)
     db.session.commit()
+
+    # Step 1: Automated Lesson Plan Generation with safe error boundary
+    try:
+        from app.services.lesson_plan_service import generate_lesson_plan
+        generate_lesson_plan(sub_req.id, admin_user_id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Lesson plan generation warning for request #{sub_req.id}: {e}")
+
+    # Step 2: Coordinated Humanized Faculty Notifications
+    try:
+        from app.services.communication_service import dispatch_substitution_notifications
+        dispatch_substitution_notifications(sub_req, is_approved=True)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Notification dispatch warning for request #{sub_req.id}: {e}")
+
     return assignment
 
 
@@ -175,8 +191,24 @@ def manual_assign_request(request_id: int, faculty_id: int, admin_user_id: int, 
         
     sub_req.recommended_faculty_id = faculty_id
     sub_req.status = 'ASSIGNED'
-    notify_faculty_assignment(faculty_id, sub_req)
     db.session.commit()
+
+    # Step 1: Automated Lesson Plan Generation with safe error boundary
+    try:
+        from app.services.lesson_plan_service import generate_lesson_plan
+        generate_lesson_plan(sub_req.id, admin_user_id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Lesson plan generation warning for request #{sub_req.id}: {e}")
+
+    # Step 2: Coordinated Humanized Faculty Notifications
+    try:
+        from app.services.communication_service import dispatch_substitution_notifications
+        dispatch_substitution_notifications(sub_req, is_approved=True)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Notification dispatch warning for request #{sub_req.id}: {e}")
+
     return assignment
 
 
@@ -186,6 +218,22 @@ def reject_request(request_id: int) -> SubstitutionRequest:
         raise ValueError("Substitution request not found")
     sub_req.status = 'REJECTED'
     db.session.commit()
+
+    # Dispatch rejection notification
+    try:
+        if sub_req.recommended_faculty and sub_req.recommended_faculty.user:
+            from app.services.communication_service import generate_rejection_message, create_controlled_notification
+            rej = generate_rejection_message(sub_req.recommended_faculty.name)
+            create_controlled_notification(
+                user_id=sub_req.recommended_faculty.user.id,
+                title=rej['title'],
+                message=rej['message'],
+                notif_type=rej['type'],
+                related_request_id=sub_req.id
+            )
+    except Exception as e:
+        pass
+
     return sub_req
 
 

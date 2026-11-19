@@ -1,15 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23B85C7A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SYNCORA - Intelligent Academic Timetable & Substitution Engine</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#FFF9EF" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>SYNCORA — Faculty scheduling and substitutions</title>
+    <!--
+      Theme bootstrap: runs before first paint so the saved Hello Kitty (light) or
+      Kuromi (dark) theme is applied without a flash. Preference values:
+      'light' | 'dark' | 'system' (stored under 'syncora-theme').
+    -->
+    <script>
+      (function () {
+        var pref = 'system'
+        try { pref = localStorage.getItem('syncora-theme') || 'system' } catch (e) {}
+        var dark = pref === 'dark' || (pref === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        var root = document.documentElement
+        root.setAttribute('data-theme', dark ? 'dark' : 'light')
+        root.style.colorScheme = dark ? 'dark' : 'light'
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute('content', dark ? '#17141F' : '#FFF9EF')
+      })()
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito+Sans:opsz,wght@6..12,600;6..12,700;6..12,800;6..12,900&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-background text-textPrimary antialiased selection:bg-secondary selection:text-accent">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

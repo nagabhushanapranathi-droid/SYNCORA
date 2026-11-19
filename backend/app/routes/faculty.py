@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models.models import Faculty, Department, Subject, User
+from app.models.models import Faculty, Department, Subject, User, SubstitutionAssignment
 from app.utils.auth import require_admin, csrf_protect
 from app.utils.helpers import success_response, error_response
 from app.services.faculty_service import (
@@ -157,3 +157,40 @@ def remove_faculty_subject(faculty_id, subject_id):
     if not success:
         return error_response('Faculty or Subject not found', status=404)
     return success_response(message='Subject removed from faculty')
+
+
+@faculty_bp.route('/<int:faculty_id>/history', methods=['GET'])
+def get_faculty_substitution_history(faculty_id):
+    """Retrieve substitution assignment history for a faculty member."""
+    faculty = Faculty.query.get(faculty_id)
+    if not faculty:
+        return error_response('Faculty not found', status=404)
+
+    assignments = SubstitutionAssignment.query.filter_by(
+        assigned_faculty_id=faculty_id
+    ).order_by(SubstitutionAssignment.assigned_at.desc()).all()
+
+    history = []
+    for a in assignments:
+        req = a.request
+        tt = req.timetable if req else None
+        subj_name = tt.subject.name if tt and tt.subject else 'General Lecture'
+        class_name = tt.class_name if tt else 'Class'
+        date_str = req.date.strftime('%B %d, %Y') if req and req.date else (a.assigned_at.strftime('%B %d, %Y') if a.assigned_at else 'Recent')
+
+        history.append({
+            'id': a.id,
+            'request_id': a.request_id,
+            'subject': subj_name,
+            'class_name': class_name,
+            'date': date_str,
+            'status': req.status if req else 'ASSIGNED'
+        })
+
+    return success_response(data={
+        'faculty_id': faculty_id,
+        'faculty_name': faculty.name,
+        'history': history,
+        'total_substitutions': len(history)
+    })
+

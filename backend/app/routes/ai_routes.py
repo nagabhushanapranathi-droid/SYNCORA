@@ -17,21 +17,66 @@ from app.ai.gemini_service import (
 )
 from app.algorithms.allocation import get_substitution_count
 
+from app.ai.academic_tools import (
+    tool_get_teaching_schedule,
+    tool_get_faculty_assigned_plan,
+    tool_get_previous_lecture_progress,
+    tool_get_suggested_next_topics,
+    tool_get_pending_lesson_plans,
+    tool_get_substitutions_missing_handover,
+    tool_get_department_workload_summary,
+    tool_get_institutional_stats,
+)
+
 ai_bp = Blueprint('ai', __name__)
 
 
-def build_chat_context(query_text: str) -> dict:
-    """Retrieve relevant database context dynamically based on intent keywords."""
+def build_chat_context(query_text: str, user=None) -> dict:
+    """Retrieve relevant database context dynamically using predefined academic tools with role scoping."""
     today = date.today()
     q_lower = query_text.lower()
+    is_faculty = user and user.role == 'faculty' and user.faculty_id
+    is_admin = not user or user.role == 'admin'
+
     context = {
         'current_date': today.isoformat(),
         'current_time': datetime.now().strftime('%H:%M:%S'),
-        'total_active_faculty': Faculty.query.filter_by(is_active=True).count()
+        'total_active_faculty': Faculty.query.filter_by(is_active=True).count(),
+        'user_role': user.role if user else 'anonymous'
     }
-    
-    # Check for attendance / availability keywords
-    if any(k in q_lower for k in ['available', 'free', 'present', 'who is here', 'attendance']):
+
+    # 1. Faculty personal queries ("What should I teach?", "Show my assigned lesson plan")
+    if is_faculty:
+        context['faculty_id'] = user.faculty_id
+        if any(k in q_lower for k in ['teach', 'tomorrow', 'schedule', 'class', 'lecture', 'my', 'assigned', 'lesson plan']):
+            context['my_teaching_schedule'] = tool_get_teaching_schedule(user.faculty_id)
+            context['my_assigned_plans'] = tool_get_faculty_assigned_plan(user.faculty_id)
+
+        if any(k in q_lower for k in ['previous', 'covered', 'last week', 'history', 'progress']):
+            fac = Faculty.query.get(user.faculty_id)
+            sub_ids = [s.id for s in fac.subjects] if fac and fac.subjects else []
+            first_sub = sub_ids[0] if sub_ids else None
+            context['previous_lecture_progress'] = tool_get_previous_lecture_progress(subject_id=first_sub, limit=5)
+
+    # 2. Admin queries ("Pending lesson plans", "Missing handover notes", "Next topics")
+    if is_admin:
+        if any(k in q_lower for k in ['pending', 'missing lesson', 'plans']):
+            context['pending_lesson_plans'] = tool_get_pending_lesson_plans()
+
+        if any(k in q_lower for k in ['missing handover', 'handover note', 'handover']):
+            context['missing_handover_notes'] = tool_get_substitutions_missing_handover()
+
+        if any(k in q_lower for k in ['continue', 'next topic', 'syllabus', 'progress']):
+            latest_req = SubstitutionRequest.query.order_by(SubstitutionRequest.id.desc()).first()
+            if latest_req and latest_req.timetable:
+                context['suggested_next_topics'] = tool_get_suggested_next_topics(
+                    latest_req.timetable.subject_id,
+                    latest_req.timetable.class_name
+                )
+
+    # 3. Attendance / availability keywords (Both Admin and Faculty)
+    if any(k in q_lower for k in ['available', 'free', 'present', 'who is here', 'attendance', 'stats']):
+        context['attendance_summary'] = tool_get_institutional_stats(today)
         p_records = Attendance.query.filter_by(date=today, status='PRESENT').all()
         context['present_faculty'] = [
             {
@@ -41,8 +86,8 @@ def build_chat_context(query_text: str) -> dict:
             }
             for r in p_records
         ]
-        
-    # Check for absence keywords
+
+    # 4. Absence keywords
     if any(k in q_lower for k in ['absent', 'leave', 'missing', 'not present', 'away']):
         absences = Absence.query.filter_by(date=today).all()
         context['absent_faculty'] = [
@@ -53,9 +98,9 @@ def build_chat_context(query_text: str) -> dict:
             }
             for a in absences
         ]
-        
-    # Check for substitution / pending requests keywords
-    if any(k in q_lower for k in ['substitution', 'pending', 'request', 'replace', 'coverage']):
+
+    # 5. Substitution / coverage keywords
+    if any(k in q_lower for k in ['substitution', 'request', 'replace', 'coverage']):
         sub_requests = SubstitutionRequest.query.filter_by(date=today).all()
         context['today_substitutions'] = [
             {
@@ -67,18 +112,11 @@ def build_chat_context(query_text: str) -> dict:
             }
             for s in sub_requests
         ]
-        
-    # Check for workload / statistics keywords
+
+    # 6. Workload / statistics keywords
     if any(k in q_lower for k in ['workload', 'distribution', 'busiest', 'assigned']):
-        faculties = Faculty.query.filter_by(is_active=True).all()
-        workload = []
-        for f in faculties:
-            cnt = get_substitution_count(f.id)
-            if cnt > 0:
-                workload.append({'name': f.name, 'substitutions_handled': cnt})
-        workload.sort(key=lambda x: x['substitutions_handled'], reverse=True)
-        context['substitution_workloads'] = workload[:10]
-        
+        context['substitution_workloads'] = tool_get_department_workload_summary()[:10]
+
     return context
 
 
@@ -86,12 +124,13 @@ def build_chat_context(query_text: str) -> dict:
 @require_auth
 @csrf_protect
 def chat():
+    from flask import g
     data = request.get_json(silent=True) or {}
     message = data.get('message', '').strip()
     if not message:
         return error_response('Message content is required', status=400)
-        
-    context = build_chat_context(message)
+
+    context = build_chat_context(message, user=g.current_user)
     reply = chat_assistant(message, context)
     return success_response(data={'reply': reply, 'context': context})
 
@@ -165,26 +204,133 @@ def report_alias():
     return success_response(data={'report': narrative_report, 'metrics': stats_data})
 
 
-@ai_bp.route('/generate-report', methods=['POST'])
+@ai_bp.route('/config', methods=['GET'])
+@require_auth
+def get_ai_config_endpoint():
+    """Retrieve AI configuration, provider statuses, FreeLLMAPI gateway telemetry, usage metrics, and recent errors (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager, get_recent_errors, get_usage_metrics
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required to view AI configuration', status=403)
+
+    statuses = ai_manager.get_all_provider_status()
+    gateway_data = ai_manager.get_gateway_telemetry()
+
+    return success_response(data={
+        'primary_provider': ai_manager.get_primary_provider_name(),
+        'fallback_provider': ai_manager.get_fallback_provider_name(),
+        'gateway': gateway_data,
+        'providers': statuses,
+        'recent_errors': get_recent_errors(limit=20),
+        'usage_metrics': get_usage_metrics()
+    })
+
+
+@ai_bp.route('/models', methods=['GET'])
+@require_auth
+def get_ai_models_endpoint():
+    """Dynamically discover available models from FreeLLMAPI gateway (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    refresh = request.args.get('refresh', 'false').lower() == 'true'
+    models = ai_manager.gateway.get_available_models(force_refresh=refresh)
+    return success_response(data={
+        'models': models,
+        'count': len(models),
+        'default_model': ai_manager.gateway.get_default_model(),
+        'cached': not refresh
+    })
+
+
+@ai_bp.route('/test-connection', methods=['POST'])
 @require_auth
 @csrf_protect
-def report():
-    today = date.today()
-    total_faculty = Faculty.query.filter_by(is_active=True).count()
-    present_today = Attendance.query.filter_by(date=today, status='PRESENT').count()
-    absent_today = Attendance.query.filter_by(date=today, status='ABSENT').count()
-    sub_requests = SubstitutionRequest.query.filter_by(date=today).all()
-    
-    stats_data = {
-        'date': today.isoformat(),
-        'total_faculty': total_faculty,
-        'present_today': present_today,
-        'absent_today': absent_today,
-        'total_substitutions': len(sub_requests),
-        'pending': sum(1 for s in sub_requests if s.status in ['PENDING', 'RECOMMENDED']),
-        'completed': sum(1 for s in sub_requests if s.status in ['APPROVED', 'ASSIGNED']),
-        'suspended': sum(1 for s in sub_requests if s.status == 'SUSPENDED')
-    }
-    
-    narrative_report = generate_daily_report(stats_data)
-    return success_response(data={'report': narrative_report, 'metrics': stats_data})
+def test_connection_endpoint():
+    """Execute live connectivity audit against FreeLLMAPI gateway (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    is_avail, msg, telemetry = ai_manager.gateway.check_availability()
+    return success_response(data={
+        'success': is_avail,
+        'message': msg,
+        'telemetry': telemetry
+    })
+
+
+@ai_bp.route('/config', methods=['POST'])
+@require_auth
+@csrf_protect
+def update_ai_config_endpoint():
+    """Update AI gateway settings and model selections (Admin only). Secrets are protected server-side."""
+    import os
+    from flask import g
+    from app import db
+    from app.models.models import AIConfig
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required to update AI configuration', status=403)
+
+    data = request.get_json(silent=True) or {}
+    primary = data.get('primary_provider')
+    fallback = data.get('fallback_provider')
+    default_model = data.get('default_model')
+    timeout_val = data.get('timeout')
+    retries_val = data.get('max_retries')
+
+    def _upsert_config(key, val, desc):
+        conf = AIConfig.query.filter_by(key=key).first()
+        if not conf:
+            conf = AIConfig(key=key, value=str(val), description=desc)
+            db.session.add(conf)
+        else:
+            conf.value = str(val)
+
+    if primary:
+        os.environ['AI_PRIMARY_PROVIDER'] = str(primary).strip().lower()
+        _upsert_config('AI_PRIMARY_PROVIDER', primary, 'Primary AI provider')
+
+    if fallback is not None:
+        os.environ['AI_FALLBACK_PROVIDER'] = str(fallback).strip().lower()
+        _upsert_config('AI_FALLBACK_PROVIDER', fallback, 'Fallback AI provider')
+
+    if default_model:
+        os.environ['FREELLMAPI_DEFAULT_MODEL'] = str(default_model).strip()
+        _upsert_config('FREELLMAPI_DEFAULT_MODEL', default_model, 'Default FreeLLMAPI Model')
+
+    if timeout_val:
+        os.environ['FREELLMAPI_TIMEOUT'] = str(timeout_val).strip()
+        _upsert_config('FREELLMAPI_TIMEOUT', timeout_val, 'FreeLLMAPI timeout seconds')
+
+    if retries_val is not None:
+        os.environ['FREELLMAPI_MAX_RETRIES'] = str(retries_val).strip()
+        _upsert_config('FREELLMAPI_MAX_RETRIES', retries_val, 'FreeLLMAPI max retries')
+
+    db.session.commit()
+    return success_response(message='AI configuration updated successfully')
+
+
+@ai_bp.route('/test-provider', methods=['POST'])
+@require_auth
+@csrf_protect
+def test_provider_endpoint():
+    """Execute a live connectivity test against a named AI provider (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    data = request.get_json(silent=True) or {}
+    provider_name = data.get('provider')
+    if not provider_name:
+        return error_response('provider name is required (e.g. gemini, freellmapi, openai)', status=400)
+
+    result = ai_manager.test_provider(provider_name)
+    return success_response(data=result)
+
+
+

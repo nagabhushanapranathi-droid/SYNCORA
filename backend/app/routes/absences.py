@@ -45,6 +45,17 @@ def today_absences():
     return success_response(data=result)
 
 
+@absences_bp.route('/<int:absence_id>', methods=['GET'])
+def get_absence(absence_id):
+    """Retrieve details of a specific absence record."""
+    absence = Absence.query.get(absence_id)
+    if not absence:
+        return error_response('Absence record not found', status=404)
+    data = absence.to_dict()
+    data['substitution_requests'] = [sr.to_dict() for sr in absence.substitution_requests]
+    return success_response(data=data)
+
+
 @absences_bp.route('', methods=['POST'])
 @absences_bp.route('/', methods=['POST'])
 @require_admin

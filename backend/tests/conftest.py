@@ -1,5 +1,8 @@
+import os
 import pytest
 from app import create_app, db
+
+os.environ['TESTING'] = 'True'
 
 
 class TestConfig:
@@ -8,6 +11,8 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GOOGLE_API_KEY = ''
+    FREELLMAPI_API_KEY = ''
+    FREELLM_API_KEY = ''
     WTF_CSRF_ENABLED = False
 
 
