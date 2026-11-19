@@ -18,6 +18,10 @@ from app.models.models import (
     SubstitutionAssignment,
     Notification,
     faculty_subject,
+    CourseSyllabus,
+    LessonProgress,
+    LessonPlan,
+    HandoverNote,
 )
 from app.utils.helpers import get_day_of_week
 
@@ -30,7 +34,11 @@ def seed_database():
         print("=" * 60)
         
         # 1. Clean existing records (idempotent)
-        print("[1/7] Cleaning existing data...")
+        print("[1/8] Cleaning existing data...")
+        db.session.query(HandoverNote).delete()
+        db.session.query(LessonPlan).delete()
+        db.session.query(LessonProgress).delete()
+        db.session.query(CourseSyllabus).delete()
         db.session.query(Notification).delete()
         db.session.query(SubstitutionAssignment).delete()
         db.session.query(SubstitutionRequest).delete()
@@ -431,6 +439,245 @@ def seed_database():
             )
             db.session.add(assignment)
             
+        # 8. Seed Course Syllabuses, Lesson Progress, and Handover Notes
+        print("[8/8] Seeding Course Syllabuses, Lesson Progress & Academic Context...")
+        import json
+
+        # Syllabuses
+        syllabuses = [
+            # CS101: Data Structures
+            CourseSyllabus(
+                subject_id=subjects_data['CS101'].id,
+                unit_number=1,
+                unit_title="Introduction to Linear Structures & Arrays",
+                topics=json.dumps([
+                    "Asymptotic Notations (Big-O, Omega, Theta)",
+                    "1D & 2D Arrays in Memory",
+                    "Dynamic Arrays & Amortized Analysis",
+                    "Pointer Arithmetic and Array Applications"
+                ]),
+                course_outcomes=json.dumps(["CO1: Analyze time and space efficiency of algorithms", "CO2: Implement contiguous linear collections"]),
+                estimated_hours=10.0,
+                learning_objectives="Understand foundational algorithmic complexity and array memory layouts."
+            ),
+            CourseSyllabus(
+                subject_id=subjects_data['CS101'].id,
+                unit_number=2,
+                unit_title="Linked Lists & Sequential Collections",
+                topics=json.dumps([
+                    "Singly Linked Lists: Node Structure & Pointers",
+                    "Insertion, Deletion, and Traversal Algorithms",
+                    "Doubly Linked Lists & Sentinel Nodes",
+                    "Circular Linked Lists and Josephus Problem",
+                    "Applications of Linked Lists in Polynomial Representation"
+                ]),
+                course_outcomes=json.dumps(["CO2: Implement non-contiguous linear collections", "CO3: Compare array vs pointer-based implementations"]),
+                estimated_hours=12.0,
+                learning_objectives="Master pointer-based data structures and their trade-offs vs contiguous arrays."
+            ),
+            CourseSyllabus(
+                subject_id=subjects_data['CS101'].id,
+                unit_number=3,
+                unit_title="Stacks and Queues",
+                topics=json.dumps([
+                    "Stack Abstract Data Type (ADT) & Array/Linked List implementations",
+                    "Infix, Postfix, and Prefix Expressions conversion",
+                    "Queue ADT & Circular Queue implementation",
+                    "Double-Ended Queue (Deque) and Priority Queue concepts"
+                ]),
+                course_outcomes=json.dumps(["CO3: Apply LIFO and FIFO structures to real-world computing problems"]),
+                estimated_hours=10.0,
+                learning_objectives="Design and deploy LIFO and FIFO abstract data types."
+            ),
+            CourseSyllabus(
+                subject_id=subjects_data['CS101'].id,
+                unit_number=4,
+                unit_title="Trees and Binary Search Trees",
+                topics=json.dumps([
+                    "Tree Terminology, Binary Tree Properties",
+                    "Binary Tree Traversals (Inorder, Preorder, Postorder, Level-order)",
+                    "Binary Search Trees (BST) Search, Insertion, and Deletion",
+                    "Balanced Trees: AVL Tree Rotations Introduction"
+                ]),
+                course_outcomes=json.dumps(["CO4: Implement hierarchical non-linear search trees"]),
+                estimated_hours=14.0,
+                learning_objectives="Construct hierarchical tree structures with logarithmic search characteristics."
+            ),
+            # CS102: Algorithms
+            CourseSyllabus(
+                subject_id=subjects_data['CS102'].id,
+                unit_number=1,
+                unit_title="Algorithm Design Paradigms & Divide and Conquer",
+                topics=json.dumps([
+                    "Divide and Conquer Framework",
+                    "Merge Sort Algorithm & Recurrence Relations",
+                    "Quick Sort: Partitioning strategies and worst-case mitigation",
+                    "Master Theorem for Solving Recurrences"
+                ]),
+                course_outcomes=json.dumps(["CO1: Apply divide-and-conquer principles to computational problems"]),
+                estimated_hours=12.0,
+                learning_objectives="Formulate divide-and-conquer recurrences and analyze asymptotic bounds."
+            ),
+            # CS201: Database Systems
+            CourseSyllabus(
+                subject_id=subjects_data['CS201'].id,
+                unit_number=1,
+                unit_title="Relational Model & Formal Query Languages",
+                topics=json.dumps([
+                    "Database Architecture and 3-Schema Architecture",
+                    "Relational Algebra Operations: Select, Project, Join, Set Operations",
+                    "Tuple Relational Calculus",
+                    "Integrity Constraints and Foreign Keys"
+                ]),
+                course_outcomes=json.dumps(["CO1: Model relational data and express formal relational queries"]),
+                estimated_hours=10.0,
+                learning_objectives="Formulate formal relational algebra queries and design schema integrity."
+            ),
+            # EC101: Digital Electronics
+            CourseSyllabus(
+                subject_id=subjects_data['EC101'].id,
+                unit_number=1,
+                unit_title="Combinational Logic Design",
+                topics=json.dumps([
+                    "Boolean Algebra & De Morgan's Theorems",
+                    "Karnaugh Maps (K-Maps) up to 5 variables",
+                    "Multiplexers, Demultiplexers, Decoders",
+                    "Arithmetic Circuits: Half/Full Adders & Subtractors"
+                ]),
+                course_outcomes=json.dumps(["CO1: Minimize Boolean functions and construct combinational circuits"]),
+                estimated_hours=12.0,
+                learning_objectives="Synthesize minimal combinational logic circuits using standard gates and MSI devices."
+            ),
+            # MATH101: Engineering Mathematics
+            CourseSyllabus(
+                subject_id=subjects_data['MATH101'].id,
+                unit_number=1,
+                unit_title="Linear Algebra & Matrices",
+                topics=json.dumps([
+                    "Rank of a Matrix, Row Echelon Form",
+                    "Consistency of Linear Systems (Gauss Elimination)",
+                    "Eigenvalues, Eigenvectors, and Diagonalization",
+                    "Cayley-Hamilton Theorem & Matrix Inverse"
+                ]),
+                course_outcomes=json.dumps(["CO1: Solve linear equations and compute eigenspaces"]),
+                estimated_hours=14.0,
+                learning_objectives="Analyze linear transformations and characteristic polynomial decompositions."
+            ),
+        ]
+        db.session.add_all(syllabuses)
+        db.session.flush()
+
+        # Seed Verified Lesson Progress for Dr. Priya Sharma in CS101 (CS-A)
+        priya_fac = faculty_objects["Dr. Priya Sharma"]
+        cs101_sub = subjects_data["CS101"]
+
+        progress_records = [
+            # Completed Unit 1
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=1,
+                topic_name="Asymptotic Notations (Big-O, Omega, Theta)",
+                status="COMPLETED",
+                is_verified=True,
+                completion_date=today - timedelta(days=12),
+                hours_spent=2.0,
+                notes="Completed with sample complexity exercises."
+            ),
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=1,
+                topic_name="1D & 2D Arrays in Memory",
+                status="COMPLETED",
+                is_verified=True,
+                completion_date=today - timedelta(days=10),
+                hours_spent=2.0,
+                notes="Memory row-major and column-major offset formulas covered."
+            ),
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=1,
+                topic_name="Dynamic Arrays & Amortized Analysis",
+                status="COMPLETED",
+                is_verified=True,
+                completion_date=today - timedelta(days=8),
+                hours_spent=2.0,
+                notes="Geometric doubling proof explained."
+            ),
+            # Completed & in progress Unit 2
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=2,
+                topic_name="Singly Linked Lists: Node Structure & Pointers",
+                status="COMPLETED",
+                is_verified=True,
+                completion_date=today - timedelta(days=5),
+                hours_spent=2.0,
+                notes="Classroom coding demonstration completed."
+            ),
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=2,
+                topic_name="Insertion, Deletion, and Traversal Algorithms",
+                status="COMPLETED",
+                is_verified=True,
+                completion_date=today - timedelta(days=3),
+                hours_spent=2.0,
+                notes="Corner cases (head/tail deletion) discussed."
+            ),
+            LessonProgress(
+                subject_id=cs101_sub.id,
+                faculty_id=priya_fac.id,
+                class_name="CS-A",
+                section="A",
+                unit_number=2,
+                topic_name="Doubly Linked Lists & Sentinel Nodes",
+                status="IN_PROGRESS",
+                is_verified=True,
+                completion_date=None,
+                hours_spent=1.0,
+                notes="Started node structure; insertion algorithm pending."
+            ),
+        ]
+        db.session.add_all(progress_records)
+
+        # Seed Faculty Handover Note for Dr. Priya Sharma
+        handover = HandoverNote(
+            faculty_id=priya_fac.id,
+            subject_id=cs101_sub.id,
+            class_name="CS-A",
+            section="A",
+            current_unit="Unit 2: Linked Lists & Sequential Collections",
+            completed_topics=json.dumps([
+                "Singly Linked Lists: Node Structure & Pointers",
+                "Insertion, Deletion, and Traversal Algorithms"
+            ]),
+            current_topic="Doubly Linked Lists & Sentinel Nodes",
+            next_topics=json.dumps([
+                "Circular Linked Lists and Josephus Problem",
+                "Applications of Linked Lists in Polynomial Representation",
+                "Unit 3: Stack Abstract Data Type introduction"
+            ]),
+            pending_assignments="Programming Assignment 2 on Linked List Manipulation due next Monday",
+            student_notes="Students grasped singly linked lists quickly. Please emphasize edge cases when deleting the only node in a doubly linked list.",
+            additional_instructions="Use whiteboard code tracing for doubly linked list pointer updates."
+        )
+        db.session.add(handover)
+
         db.session.commit()
         
         print("\n" + "=" * 60)

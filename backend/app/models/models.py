@@ -330,6 +330,97 @@ class Notification(db.Model):
 
 
 
+class CourseSyllabus(db.Model):
+    __tablename__ = 'course_syllabus'
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
+    unit_number = db.Column(db.Integer, nullable=False)
+    unit_title = db.Column(db.String(200), nullable=False)
+    topics = db.Column(db.Text, nullable=False)  # JSON list of topic strings
+    course_outcomes = db.Column(db.Text, nullable=True)  # JSON list or text
+    estimated_hours = db.Column(db.Float, default=10.0)
+    learning_objectives = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    subject = db.relationship('Subject', backref=db.backref('syllabus_units', lazy='dynamic', order_by='CourseSyllabus.unit_number'))
+
+    def get_topics(self):
+        if self.topics:
+            try:
+                return json.loads(self.topics)
+            except Exception:
+                return []
+        return []
+
+    def set_topics(self, topics_list):
+        self.topics = json.dumps(topics_list)
+
+    def to_dict(self):
+        co = self.course_outcomes
+        if co:
+            try:
+                co = json.loads(co)
+            except Exception:
+                pass
+        return {
+            'id': self.id,
+            'subject_id': self.subject_id,
+            'subject_name': self.subject.name if self.subject else None,
+            'subject_code': self.subject.code if self.subject else None,
+            'unit_number': self.unit_number,
+            'unit_title': self.unit_title,
+            'topics': self.get_topics(),
+            'course_outcomes': co,
+            'estimated_hours': self.estimated_hours,
+            'learning_objectives': self.learning_objectives,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class LessonProgress(db.Model):
+    __tablename__ = 'lesson_progress'
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
+    faculty_id = db.Column(db.Integer, db.ForeignKey('faculty.id'), nullable=False)
+    class_name = db.Column(db.String(50), nullable=False)
+    section = db.Column(db.String(10), nullable=True)
+    unit_number = db.Column(db.Integer, nullable=True)
+    topic_name = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(20), default='COMPLETED')  # COMPLETED, IN_PROGRESS, PLANNED
+    is_verified = db.Column(db.Boolean, default=True)  # True = verified lecture conducted; False = unverified/draft
+    completion_date = db.Column(db.Date, nullable=True)
+    hours_spent = db.Column(db.Float, default=1.0)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    subject = db.relationship('Subject', backref='lesson_progress_records')
+    faculty = db.relationship('Faculty', backref='lesson_progress_records')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'subject_id': self.subject_id,
+            'subject_name': self.subject.name if self.subject else None,
+            'subject_code': self.subject.code if self.subject else None,
+            'faculty_id': self.faculty_id,
+            'faculty_name': self.faculty.name if self.faculty else None,
+            'class_name': self.class_name,
+            'section': self.section,
+            'unit_number': self.unit_number,
+            'topic_name': self.topic_name,
+            'status': self.status,
+            'is_verified': self.is_verified,
+            'completion_date': self.completion_date.isoformat() if self.completion_date else None,
+            'hours_spent': self.hours_spent,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class LessonPlan(db.Model):
     __tablename__ = 'lesson_plan'
     id = db.Column(db.Integer, primary_key=True)
@@ -342,11 +433,14 @@ class LessonPlan(db.Model):
     scheduled_date = db.Column(db.Date, nullable=False)
     duration_minutes = db.Column(db.Integer, nullable=True)
     academic_context = db.Column(db.Text, nullable=True)  # JSON: syllabus progress, previous topics
-    lesson_content = db.Column(db.Text, nullable=False)  # The AI-generated lesson plan
+    lesson_content = db.Column(db.Text, nullable=False)  # The AI-generated lesson plan narrative / markdown
+    structured_plan = db.Column(db.Text, nullable=True)  # JSON string of structured 12-point lesson plan
     teaching_notes = db.Column(db.Text, nullable=True)  # Substitute's notes after class
     status = db.Column(db.String(20), default='GENERATED')  # GENERATED, VIEWED, IN_PROGRESS, COMPLETED
     feedback = db.Column(db.Text, nullable=True)
     topics_completed = db.Column(db.Text, nullable=True)  # JSON array of completed topics
+    has_academic_continuity_warning = db.Column(db.Boolean, default=False)
+    continuity_warning_message = db.Column(db.Text, nullable=True)
     is_ai_generated = db.Column(db.Boolean, default=True)
     ai_provider = db.Column(db.String(50), nullable=True)
     ai_model = db.Column(db.String(100), nullable=True)
@@ -357,6 +451,14 @@ class LessonPlan(db.Model):
     subject = db.relationship('Subject', backref='lesson_plans')
     original_faculty = db.relationship('Faculty', foreign_keys=[original_faculty_id], backref='lesson_plans_as_original')
     substitute_faculty = db.relationship('Faculty', foreign_keys=[substitute_faculty_id], backref='lesson_plans_as_substitute')
+
+    def get_structured_plan(self):
+        if self.structured_plan:
+            try:
+                return json.loads(self.structured_plan)
+            except Exception:
+                return None
+        return None
     
     def to_dict(self):
         return {
@@ -375,10 +477,13 @@ class LessonPlan(db.Model):
             'duration_minutes': self.duration_minutes,
             'academic_context': json.loads(self.academic_context) if self.academic_context else None,
             'lesson_content': self.lesson_content,
+            'structured_plan': self.get_structured_plan(),
             'teaching_notes': self.teaching_notes,
             'status': self.status,
             'feedback': self.feedback,
             'topics_completed': json.loads(self.topics_completed) if self.topics_completed else None,
+            'has_academic_continuity_warning': bool(self.has_academic_continuity_warning),
+            'continuity_warning_message': self.continuity_warning_message,
             'is_ai_generated': self.is_ai_generated,
             'ai_provider': self.ai_provider,
             'ai_model': self.ai_model,
@@ -390,6 +495,7 @@ class LessonPlan(db.Model):
 class HandoverNote(db.Model):
     __tablename__ = 'handover_note'
     id = db.Column(db.Integer, primary_key=True)
+    substitution_request_id = db.Column(db.Integer, db.ForeignKey('substitution_request.id'), nullable=True)
     faculty_id = db.Column(db.Integer, db.ForeignKey('faculty.id'), nullable=False)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
     class_name = db.Column(db.String(50), nullable=True)
@@ -404,12 +510,14 @@ class HandoverNote(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    substitution_request = db.relationship('SubstitutionRequest', backref='handover_notes')
     faculty = db.relationship('Faculty', backref='handover_notes')
     subject = db.relationship('Subject', backref='handover_notes')
     
     def to_dict(self):
         return {
             'id': self.id,
+            'substitution_request_id': self.substitution_request_id,
             'faculty_id': self.faculty_id,
             'faculty_name': self.faculty.name if self.faculty else None,
             'subject_id': self.subject_id,
@@ -427,6 +535,9 @@ class HandoverNote(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+FacultyHandoverNote = HandoverNote
 
 
 class WorkloadRecord(db.Model):
