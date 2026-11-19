@@ -163,8 +163,8 @@ npm run build
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
-| **Administrator** | `admin@syncora.edu` | `admin123` |
-| **Faculty** | `faculty@syncora.edu` | `faculty123` |
+| **Administrator** | `admin@syncora.edu` | `Admin@123` |
+| **Faculty** (any seeded faculty, e.g.) | `priya.sharma@syncora.edu` | `Faculty@123` |
 
 ---
 
