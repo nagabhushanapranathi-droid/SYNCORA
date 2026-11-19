@@ -204,26 +204,80 @@ def report_alias():
     return success_response(data={'report': narrative_report, 'metrics': stats_data})
 
 
-@ai_bp.route('/generate-report', methods=['POST'])
+@ai_bp.route('/config', methods=['GET'])
+@require_auth
+def get_ai_config_endpoint():
+    """Retrieve AI configuration, provider statuses, usage metrics, and recent errors (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager, get_recent_errors, get_usage_metrics
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required to view AI configuration', status=403)
+
+    statuses = ai_manager.get_all_provider_status()
+    return success_response(data={
+        'primary_provider': ai_manager.get_primary_provider_name(),
+        'fallback_provider': ai_manager.get_fallback_provider_name(),
+        'providers': statuses,
+        'recent_errors': get_recent_errors(limit=20),
+        'usage_metrics': get_usage_metrics()
+    })
+
+
+@ai_bp.route('/config', methods=['POST'])
 @require_auth
 @csrf_protect
-def report():
-    today = date.today()
-    total_faculty = Faculty.query.filter_by(is_active=True).count()
-    present_today = Attendance.query.filter_by(date=today, status='PRESENT').count()
-    absent_today = Attendance.query.filter_by(date=today, status='ABSENT').count()
-    sub_requests = SubstitutionRequest.query.filter_by(date=today).all()
-    
-    stats_data = {
-        'date': today.isoformat(),
-        'total_faculty': total_faculty,
-        'present_today': present_today,
-        'absent_today': absent_today,
-        'total_substitutions': len(sub_requests),
-        'pending': sum(1 for s in sub_requests if s.status in ['PENDING', 'RECOMMENDED']),
-        'completed': sum(1 for s in sub_requests if s.status in ['APPROVED', 'ASSIGNED']),
-        'suspended': sum(1 for s in sub_requests if s.status == 'SUSPENDED')
-    }
-    
-    narrative_report = generate_daily_report(stats_data)
-    return success_response(data={'report': narrative_report, 'metrics': stats_data})
+def update_ai_config_endpoint():
+    """Update primary/fallback AI provider settings (Admin only). Secrets are protected server-side."""
+    import os
+    from flask import g
+    from app import db
+    from app.models.models import AIConfig
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required to update AI configuration', status=403)
+
+    data = request.get_json(silent=True) or {}
+    primary = data.get('primary_provider')
+    fallback = data.get('fallback_provider')
+
+    if primary:
+        os.environ['AI_PRIMARY_PROVIDER'] = str(primary).strip().lower()
+        conf = AIConfig.query.filter_by(key='AI_PRIMARY_PROVIDER').first()
+        if not conf:
+            conf = AIConfig(key='AI_PRIMARY_PROVIDER', value=primary, description='Primary AI provider')
+            db.session.add(conf)
+        else:
+            conf.value = primary
+
+    if fallback:
+        os.environ['AI_FALLBACK_PROVIDER'] = str(fallback).strip().lower()
+        conf_fb = AIConfig.query.filter_by(key='AI_FALLBACK_PROVIDER').first()
+        if not conf_fb:
+            conf_fb = AIConfig(key='AI_FALLBACK_PROVIDER', value=fallback, description='Fallback AI provider')
+            db.session.add(conf_fb)
+        else:
+            conf_fb.value = fallback
+
+    db.session.commit()
+    return success_response(message='AI configuration updated successfully')
+
+
+@ai_bp.route('/test-provider', methods=['POST'])
+@require_auth
+@csrf_protect
+def test_provider_endpoint():
+    """Execute a live connectivity test against a named AI provider (Admin only)."""
+    from flask import g
+    from app.ai.provider_manager import ai_manager
+    if g.current_user.role != 'admin':
+        return error_response('Administrator privileges required', status=403)
+
+    data = request.get_json(silent=True) or {}
+    provider_name = data.get('provider')
+    if not provider_name:
+        return error_response('provider name is required (e.g. gemini, freellmapi, openai)', status=400)
+
+    result = ai_manager.test_provider(provider_name)
+    return success_response(data=result)
+
+
+
