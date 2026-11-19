@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: #FFF9EF;
+    color: #51413F;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Nunito Sans', 'DM Sans', sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-accent text-white px-4 py-2 rounded-xl font-semibold hover:bg-accent-dark transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 shadow-sm;
+  }
+  .btn-secondary {
+    @apply bg-white text-accent px-4 py-2 rounded-xl font-medium border-2 border-coral/40 hover:border-accent hover:bg-coral/10 transition-all duration-200 inline-flex items-center justify-center gap-2;
+  }
+  .btn-ghost {
+    @apply text-textSecondary px-4 py-2 rounded-xl font-medium hover:bg-cream hover:text-cocoa transition-all duration-200 inline-flex items-center justify-center gap-2;
+  }
+  .card {
+    @apply bg-card rounded-2xl shadow-card border border-border p-6 relative overflow-hidden;
+  }
+  .input-field {
+    @apply w-full border-2 border-border rounded-xl px-4 py-2.5 text-textPrimary bg-white focus:outline-none focus:ring-2 focus:ring-coral/30 focus:border-accent transition-all duration-200 text-sm;
+  }
+  .label {
+    @apply block text-sm font-semibold text-textPrimary mb-1;
+  }
+  
+  /* Status badges with kawaii styling */
+  .badge-present { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-mint/30 text-success-dark border border-mint/50; }
+  .badge-absent { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-coral/20 text-accent border border-coral/40; }
+  .badge-pending { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-butter/30 text-warning-dark border border-butter/50; }
+  .badge-approved { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-mint/30 text-success-dark border border-mint/50; }
+  .badge-rejected { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-coral/20 text-accent border border-coral/40; }
+  .badge-suspended { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-lavender/30 text-info-dark border border-lavender/50; }
+  .badge-info { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-lavender/30 text-info-dark border border-lavender/50; }
+  
+  /* Sidebar styling */
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-textSecondary hover:bg-coral/10 hover:text-accent transition-all duration-200;
+  }
+  .sidebar-link.active {
+    @apply bg-accent text-white hover:bg-accent-dark hover:text-white shadow-sm;
+  }
+  
+  /* Decorative elements */
+  .bow-decoration::before {
+    content: '🎀';
+    font-size: 0.75rem;
+    margin-right: 0.25rem;
+  }
+  
+  .star-accent::after {
+    content: '✦';
+    font-size: 0.5rem;
+    margin-left: 0.25rem;
+    color: #F5D982;
+  }
+  
+  /* Section divider with bow */
+  .section-divider {
+    @apply relative border-t border-border my-6;
+  }
+  .section-divider::after {
+    content: '✿';
+    @apply absolute left-1/2 -translate-x-1/2 -top-2.5 bg-cream px-2 text-coral text-sm;
+  }
+  
+  /* Card with decorative corner */
+  .card-decorated {
+    @apply card;
+  }
+  .card-decorated::before {
+    content: '';
+    @apply absolute top-0 right-0 w-16 h-16;
+    background: linear-gradient(135deg, transparent 50%, rgba(244, 166, 166, 0.08) 50%);
+    border-radius: 0 1rem 0 0;
+  }
+  
+  /* AI-generated content marker */
+  .ai-content {
+    @apply relative pl-4 border-l-2 border-lavender;
+  }
+  .ai-content::before {
+    content: '✦';
+    @apply absolute -left-2 top-0 bg-cream text-butter text-xs;
+  }
+  
+  /* Stat card hover effect */
+  .stat-card-hover {
+    @apply transition-all duration-300 hover:shadow-card-hover hover:-translate-y-0.5;
+  }
+  
+  /* Empty state styling */
+  .empty-state-kawaii {
+    @apply text-center py-8;
+  }
+}
+
+/* Custom scrollbar with SYNCORA theme */
+* { box-sizing: border-box; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #FFF9EF; }
+::-webkit-scrollbar-thumb { background: #F4A6A6; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #D95763; }
+
+/* Subtle background pattern */
+.bg-pattern {
+  background-image: radial-gradient(circle, #F0E6DA 1px, transparent 1px);
+  background-size: 24px 24px;
+}
