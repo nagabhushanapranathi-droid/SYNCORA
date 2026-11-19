@@ -1,572 +1,661 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts'
-import {
-  BarChart3,
-  TrendingUp,
-  PieChart as PieIcon,
-  CheckCircle2,
-  AlertOctagon,
-  Sparkles,
-  Users,
-  Download,
-  Calendar,
-  BookOpen,
-  AlertTriangle,
-  FileCheck,
-} from 'lucide-react'
-import StatCard from '../../components/StatCard'
-import Badge from '../../components/Badge'
-import LoadingSpinner from '../../components/LoadingSpinner'
+import { Printer, Sparkles, RefreshCw, Calculator, BookOpenCheck, Cpu, ShieldCheck } from 'lucide-react'
+import ChartCard from '../../components/ChartCard'
+import Markdown from '../../components/Markdown'
+import { Skeleton } from '../../components/LoadingSpinner'
+import { PageHeader, Field, Segmented, ErrorState } from '../../components/ui'
 import { reportService } from '../../services/reportService'
+import { substitutionService } from '../../services/substitutionService'
+import { attendanceService } from '../../services/attendanceService'
+import { absenceService } from '../../services/absenceService'
+import { departmentService } from '../../services/departmentService'
+import { subjectService } from '../../services/subjectService'
+import { facultyService } from '../../services/facultyService'
 import { aiService } from '../../services/aiService'
+import { errorMessage } from '../../services/api'
 import { useToast } from '../../context/ToastContext'
+import useLoad from '../../lib/useLoad'
+import { useChartTheme, ChartTooltip, ChartLegend } from '../../lib/chartTheme'
+import { asList, isoDate, formatDate, formatDateLong } from '../../lib/format'
 
-const COLORS = ['#B85C7A', '#6B9E78', '#E8A07A', '#C0616A', '#8B84C4', '#D4879F']
+const PRESETS = [
+  { id: '7', label: '7 days' },
+  { id: '30', label: '30 days' },
+  { id: '90', label: '90 days' },
+]
+
+function daysAgo(n) {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return isoDate(d)
+}
 
 export default function Reports() {
-  const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({
-    total_substitutions: 48,
-    success_rate: 94,
-    suspended_classes: 2,
-    total_absences: 18,
-  })
-  const [deptData, setDeptData] = useState([])
-  const [statusData, setStatusData] = useState([])
-  const [trendData, setTrendData] = useState([])
-  const [workloadData, setWorkloadData] = useState([])
-  const [continuityData, setContinuityData] = useState(null)
-
-  // AI Daily Report
-  const [aiReport, setAiReport] = useState('')
-  const [generatingReport, setGeneratingReport] = useState(false)
-
+  const c = useChartTheme()
   const toast = useToast()
+  const [preset, setPreset] = useState('30')
+  const [start, setStart] = useState(daysAgo(29))
+  const [end, setEnd] = useState(isoDate())
+  const [dept, setDept] = useState('')
+  const [subject, setSubject] = useState('')
+  const [facultyId, setFacultyId] = useState('')
 
-  const loadReportData = async () => {
-    setLoading(true)
-    try {
-      const [statsRes, workloadRes, analyticsRes] = await Promise.allSettled([
-        reportService.getStats(),
-        reportService.getWorkload(),
-        reportService.getAnalytics(),
-      ])
+  const departments = useLoad(() => departmentService.getAll().then((d) => asList(d)), [], { initial: [] })
+  const subjects = useLoad(() => subjectService.getAll().then((d) => asList(d)), [], { initial: [] })
+  const faculty = useLoad(() => facultyService.getAll().then((d) => asList(d)), [], { initial: [] })
+  const stats = useLoad(() => reportService.getStats(), [])
+  const analytics = useLoad(
+    () => reportService.getAnalytics({ start_date: start, end_date: end, ...(dept ? { department_id: dept } : {}) }),
+    [start, end, dept]
+  )
+  const subs = useLoad(() => substitutionService.getAll().then((d) => asList(d)), [], { initial: [] })
+  const absences = useLoad(() => absenceService.getAll().then((d) => asList(d)), [], { initial: [] })
+  const today = useLoad(() => attendanceService.getToday(), [])
 
-      if (statsRes.status === 'fulfilled') {
-        const d = statsRes.value
-        setStats({
-          total_substitutions: d.total_substitutions ?? 54,
-          success_rate: d.success_rate ?? 96,
-          suspended_classes: d.suspended_classes ?? 2,
-          total_absences: d.total_absences ?? 19,
-        })
+  const [report, setReport] = useState(null)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportError, setReportError] = useState('')
 
-        if (d.by_department) setDeptData(d.by_department)
-        if (d.status_distribution) setStatusData(d.status_distribution)
-        if (d.weekly_trends) setTrendData(d.weekly_trends)
-      }
-
-      if (workloadRes.status === 'fulfilled') {
-        const wl = Array.isArray(workloadRes.value)
-          ? workloadRes.value
-          : workloadRes.value?.faculty_workload || []
-        setWorkloadData(wl.slice(0, 10))
-      }
-
-      if (analyticsRes.status === 'fulfilled') {
-        setContinuityData(analyticsRes.value)
-      }
-    } catch {
-      toast.error('Unable to fetch analytics telemetry.')
-    } finally {
-      // Set fallbacks for charts if empty
-      setDeptData((prev) =>
-        prev.length > 0
-          ? prev
-          : [
-              { department: 'Computer Science', count: 18 },
-              { department: 'Electronics', count: 14 },
-              { department: 'Mechanical', count: 9 },
-              { department: 'Civil', count: 6 },
-              { department: 'Information Tech', count: 7 },
-            ]
-      )
-
-      setStatusData((prev) =>
-        prev.length > 0
-          ? prev
-          : [
-              { name: 'Approved', value: 42 },
-              { name: 'Pending', value: 6 },
-              { name: 'Suspended', value: 2 },
-              { name: 'Rejected', value: 4 },
-            ]
-      )
-
-      setTrendData((prev) =>
-        prev.length > 0
-          ? prev
-          : [
-              { week: 'Week 1', substitutions: 8, absences: 9 },
-              { week: 'Week 2', substitutions: 12, absences: 13 },
-              { week: 'Week 3', substitutions: 15, absences: 16 },
-              { week: 'Week 4', substitutions: 19, absences: 20 },
-            ]
-      )
-
-      setWorkloadData((prev) =>
-        prev.length > 0
-          ? prev
-          : [
-              { name: 'Dr. Sarah Jenkins', department: 'Computer Science', count: 8, status: 'ACTIVE' },
-              { name: 'Prof. Alan Vance', department: 'Electronics', count: 6, status: 'ACTIVE' },
-              { name: 'Dr. Emily Ross', department: 'Civil', count: 5, status: 'ACTIVE' },
-              { name: 'Prof. Marcus Brody', department: 'Mechanical', count: 5, status: 'ACTIVE' },
-              { name: 'Dr. Michael Chen', department: 'Information Tech', count: 4, status: 'ACTIVE' },
-              { name: 'Prof. Lisa Ray', department: 'Computer Science', count: 4, status: 'ACTIVE' },
-            ]
-      )
-
-      setLoading(false)
-    }
+  const applyPreset = (id) => {
+    setPreset(id)
+    setStart(daysAgo(Number(id) - 1))
+    setEnd(isoDate())
   }
 
-  useEffect(() => {
-    loadReportData()
-  }, [])
+  const deptName = departments.data.find((d) => String(d.id) === dept)?.name
+  const facName = faculty.data.find((f) => String(f.id) === facultyId)?.name
 
-  const handleGenerateAiReport = async () => {
-    setGeneratingReport(true)
+  // Substitution requests narrowed by every filter (client-side; the list endpoint has no range filter).
+  const subsInRange = useMemo(
+    () =>
+      subs.data.filter(
+        (s) =>
+          s.date >= start &&
+          s.date <= end &&
+          (!dept || s.absent_faculty_department === deptName) &&
+          (!subject || s.subject_code === subject) &&
+          (!facultyId || String(s.absent_faculty_id) === facultyId || String(s.assignment?.assigned_faculty_id) === facultyId || String(s.recommended_faculty_id) === facultyId)
+      ),
+    [subs.data, start, end, dept, deptName, subject, facultyId]
+  )
+  const absencesInRange = absences.data.filter(
+    (a) => a.date >= start && a.date <= end && (!dept || a.faculty_department === deptName) && (!facultyId || String(a.faculty_id) === facultyId)
+  )
+
+  const a = analytics.data
+  const covered = subsInRange.filter((s) => ['APPROVED', 'ASSIGNED'].includes(s.status)).length
+  const suspended = subsInRange.filter((s) => s.status === 'SUSPENDED').length
+  const openCount = subsInRange.filter((s) => ['PENDING', 'RECOMMENDED'].includes(s.status)).length
+  const recordedDays = (a?.daily_attendance || []).filter((d) => d.present + d.absent > 0)
+
+  const daily = (a?.daily_attendance || []).map((d) => ({
+    ...d,
+    label: formatDate(d.date, { day: 'numeric', month: 'short' }),
+    rate: d.present + d.absent > 0 ? d.attendance_rate : null,
+  }))
+
+  const monthly = useMemo(() => {
+    const m = {}
+    subsInRange.forEach((s) => {
+      const k = s.date.slice(0, 7)
+      m[k] = m[k] || { month: k, requests: 0, covered: 0 }
+      m[k].requests++
+      if (['APPROVED', 'ASSIGNED'].includes(s.status)) m[k].covered++
+    })
+    return Object.values(m)
+      .sort((x, y) => x.month.localeCompare(y.month))
+      .map((x) => ({ ...x, label: new Date(`${x.month}-01T00:00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) }))
+  }, [subsInRange])
+
+  const bySubject = useMemo(() => {
+    const m = {}
+    subsInRange.forEach((s) => {
+      const k = s.subject_name || s.subject_code
+      m[k] = (m[k] || 0) + 1
+    })
+    return Object.entries(m)
+      .map(([name, count]) => ({ name, count }))
+      .sort((x, y) => y.count - x.count)
+      .slice(0, 8)
+  }, [subsInRange])
+
+  const workload = (a?.workload_distribution || []).filter((w) => !facultyId || String(w.faculty_id) === facultyId).slice(0, 10)
+  const deptCompare = (a?.department_comparison || []).map((d) => ({ ...d, short: d.code || d.department_name }))
+  const classesByDept = (stats.data?.by_department || []).map((d) => ({ name: d.department_code || d.department_name, full: d.department_name, classes: d.active_classes, faculty: d.faculty_count }))
+  const slots = a?.frequently_affected_slots || []
+
+  const t = today.data
+  const available = t?.present_count || 0
+  const unavailable = t ? (t.absent_count || 0) + (t.logged_out_count || 0) + (t.not_marked_count || 0) : 0
+
+  const generate = async () => {
+    setReportBusy(true)
+    setReportError('')
     try {
       const res = await aiService.generateReport()
-      setAiReport(
-        res.report ||
-        res.narrative ||
-        res.summary ||
-        "Institutional Health Assessment: Overall substitution fulfillment stands at an optimal 96% rate with minimal class suspension. Computer Science faculty have accommodated 33% of unplanned disruption hours. Workload distribution remains well within established academic parity guidelines."
-      )
-      toast.success('AI executive report generated!')
-    } catch {
-      setAiReport(
-        "Institutional Health Assessment: Overall substitution fulfillment stands at an optimal 96% rate with minimal class suspension. Computer Science faculty have accommodated 33% of unplanned disruption hours. Workload distribution remains well within established academic parity guidelines."
-      )
+      setReport(res)
+      toast.success("Today's briefing is ready.")
+    } catch (err) {
+      setReportError(errorMessage(err, 'The briefing could not be generated.'))
     } finally {
-      setGeneratingReport(false)
+      setReportBusy(false)
     }
   }
 
+  const barProps = { radius: [4, 4, 0, 0], maxBarSize: 24 }
+  const hBarProps = { radius: [0, 4, 4, 0], maxBarSize: 18 }
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Substitutions"
-          value={stats.total_substitutions}
-          icon={BarChart3}
-          color="#B85C7A"
-          subtitle="Processed this semester"
-        />
-        <StatCard
-          title="Fulfillment Success Rate"
-          value={`${stats.success_rate}%`}
-          icon={CheckCircle2}
-          color="#6B9E78"
-          subtitle="Directly covered classes"
-        />
-        <StatCard
-          title="Suspended Classes"
-          value={stats.suspended_classes}
-          icon={AlertOctagon}
-          color="#C0616A"
-          subtitle="No suitable substitute"
-        />
-        <StatCard
-          title="Total Faculty Absences"
-          value={stats.total_absences}
-          icon={Calendar}
-          color="#E8A07A"
-          subtitle="Logged leave days"
-        />
+    <div className="space-y-6">
+      <PageHeader
+        title="Reports"
+        description="Attendance, cover and workload calculated from SYNCORA's records. Every figure links back to stored data."
+        actions={
+          <button type="button" className="btn-secondary no-print" onClick={() => window.print()}>
+            <Printer className="w-4 h-4" />
+            Print report
+          </button>
+        }
+      >
+        <p className="print-only mt-2 text-sm">
+          Range {formatDate(start)} to {formatDate(end)}
+          {deptName ? `, ${deptName}` : ''}
+          {subject ? `, ${subject}` : ''}
+          {facName ? `, ${facName}` : ''}
+        </p>
+      </PageHeader>
+
+      {/* Filters */}
+      <section className="sheet p-4 no-print" aria-label="Report filters">
+        <div className="flex flex-col xl:flex-row gap-4 xl:items-end">
+          <div>
+            <p className="field-label">Range</p>
+            <Segmented label="Date range" value={preset} onChange={applyPreset} options={[...PRESETS, ...(preset === 'custom' ? [{ id: 'custom', label: 'Custom' }] : [])]} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="From" htmlFor="r-start">
+              <input id="r-start" type="date" className="input" value={start} max={end} onChange={(e) => { setStart(e.target.value); setPreset('custom') }} />
+            </Field>
+            <Field label="To" htmlFor="r-end">
+              <input id="r-end" type="date" className="input" value={end} min={start} onChange={(e) => { setEnd(e.target.value); setPreset('custom') }} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+            <Field label="Department" htmlFor="r-dept">
+              <select id="r-dept" className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
+                <option value="">All departments</option>
+                {departments.data.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Subject" htmlFor="r-subj">
+              <select id="r-subj" className="input" value={subject} onChange={(e) => setSubject(e.target.value)}>
+                <option value="">All subjects</option>
+                {subjects.data.map((s) => (
+                  <option key={s.id} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Faculty" htmlFor="r-fac">
+              <select id="r-fac" className="input" value={facultyId} onChange={(e) => setFacultyId(e.target.value)}>
+                <option value="">All faculty</option>
+                {faculty.data.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </div>
+        <p className="text-xs text-ink-3 mt-3">Department applies to every chart. Subject and faculty narrow the substitution and workload charts.</p>
+      </section>
+
+      {/* Range summary */}
+      <section className="sheet-feature px-2 py-5" aria-label="Range summary">
+        <dl className="grid grid-cols-2 lg:grid-cols-5 gap-y-5">
+          {[
+            ['Attendance rate', analytics.loading ? null : recordedDays.length ? `${a.summary.average_rate}%` : 'No records', recordedDays.length ? `Across ${recordedDays.length} recorded days` : 'No check-ins in range'],
+            ['Absences reported', absences.loading ? null : absencesInRange.length, 'In range'],
+            ['Substitution requests', subs.loading ? null : subsInRange.length, `${openCount} still open`],
+            ['Covered', subs.loading ? null : subsInRange.length ? `${Math.round((covered / subsInRange.length) * 100)}%` : '—', `${covered} of ${subsInRange.length} requests`],
+            ['Suspended classes', subs.loading ? null : suspended, 'No cover arranged'],
+          ].map(([label, value, note], i) => (
+            <div key={label} className={`px-4 sm:px-5 ${i > 0 ? 'lg:rule-v' : ''}`}>
+              <dt className="text-sm text-ink-2">{label}</dt>
+              <dd className="mt-1">{value === null ? <Skeleton className="h-8 w-16" /> : <span className="font-heading font-black text-[1.9rem] leading-none text-ink tabular">{value}</span>}</dd>
+              <dd className="mt-1.5 text-xs text-ink-3">{note}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {/* Attendance */}
+      <h2 className="font-heading font-extrabold text-xl text-ink pt-2">Attendance</h2>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <ChartCard
+          className="lg:col-span-8"
+          title="Daily attendance"
+          description="Faculty present and absent per day (days without check-ins show as zero)"
+          loading={analytics.loading}
+          error={analytics.error}
+          onRetry={analytics.reload}
+          empty={!daily.length}
+          legend={<ChartLegend items={[{ label: 'Present', color: c.good }, { label: 'Absent', color: c.critical }]} />}
+          table={{
+            columns: [
+              { key: 'date', label: 'Date' },
+              { key: 'present', label: 'Present', align: 'right' },
+              { key: 'absent', label: 'Absent', align: 'right' },
+              { key: 'rateText', label: 'Rate', align: 'right' },
+            ],
+            rows: daily.map((d) => ({ date: formatDate(d.date), present: d.present, absent: d.absent, rateText: d.rate === null ? 'No records' : `${d.rate}%` })),
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={daily} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} />
+              <XAxis dataKey="label" {...c.axisProps} minTickGap={24} />
+              <YAxis allowDecimals={false} {...c.axisProps} width={40} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: c.grid }} />
+              <Area type="linear" dataKey="present" name="Present" stroke={c.good} strokeWidth={2} fill={c.good} fillOpacity={0.1} />
+              <Area type="linear" dataKey="absent" name="Absent" stroke={c.critical} strokeWidth={2} fill={c.critical} fillOpacity={0.1} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-4"
+          title="Present and absent"
+          description="Check-in records in range"
+          loading={analytics.loading}
+          error={analytics.error}
+          onRetry={analytics.reload}
+          empty={!a || a.summary.total_present_range + a.summary.total_absent_range === 0}
+          emptyText="No attendance was recorded in this range."
+          table={{
+            columns: [
+              { key: 'name', label: 'Status' },
+              { key: 'value', label: 'Records', align: 'right' },
+            ],
+            rows: a?.present_vs_absent || [],
+          }}
+        >
+          {a && (
+            <div className="relative h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={a.present_vs_absent} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" stroke={c.surface} strokeWidth={2} startAngle={90} endAngle={-270}>
+                    {a.present_vs_absent.map((p) => (
+                      <Cell key={p.name} fill={p.name === 'Present' ? c.good : c.critical} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="font-heading font-black text-2xl text-ink tabular">{a.summary.average_rate}%</span>
+                <span className="text-xs text-ink-2">present</span>
+              </div>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-6"
+          title="Attendance by department"
+          description="Share of check-in records marked present (all recorded days)"
+          loading={analytics.loading}
+          error={analytics.error}
+          onRetry={analytics.reload}
+          empty={!deptCompare.length}
+          table={{
+            columns: [
+              { key: 'department_name', label: 'Department' },
+              { key: 'faculty_count', label: 'Faculty', align: 'right' },
+              { key: 'attendance_rate', label: 'Rate %', align: 'right' },
+            ],
+            rows: deptCompare,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={deptCompare} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} horizontal={false} vertical />
+              <XAxis type="number" domain={[0, 100]} unit="%" {...c.axisProps} />
+              <YAxis type="category" dataKey="short" {...c.axisProps} width={56} />
+              <Tooltip content={<ChartTooltip formatter={(v) => `${v}%`} labelFormatter={(l, p) => p?.[0]?.payload?.department_name} />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="attendance_rate" name="Present" fill={c.good} {...hBarProps} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-6"
+          title="Available faculty today"
+          description="Checked in and present versus absent, logged out or not marked"
+          loading={today.loading}
+          error={today.error}
+          onRetry={today.reload}
+          empty={!t || available + unavailable === 0}
+          height="h-auto"
+          table={{
+            columns: [
+              { key: 'k', label: 'Group' },
+              { key: 'v', label: 'Faculty', align: 'right' },
+            ],
+            rows: t
+              ? [
+                  { k: 'Present', v: t.present_count },
+                  { k: 'Absent', v: t.absent_count },
+                  { k: 'Logged out', v: t.logged_out_count },
+                  { k: 'Not marked', v: t.not_marked_count },
+                ]
+              : [],
+          }}
+        >
+          {t && (
+            <div className="pt-2">
+              <div className="flex items-baseline gap-2">
+                <span className="font-heading font-black text-3xl text-ink tabular">{available}</span>
+                <span className="text-sm text-ink-2">of {available + unavailable} can be ranked for cover right now</span>
+              </div>
+              <div className="mt-4 flex h-4 gap-[2px]" role="img" aria-label={`${available} available, ${unavailable} unavailable`}>
+                {[
+                  [t.present_count, c.good, 'Present'],
+                  [t.absent_count, c.critical, 'Absent'],
+                  [t.logged_out_count, c.warning, 'Logged out'],
+                  [t.not_marked_count, c.neutral, 'Not marked'],
+                ]
+                  .filter(([v]) => v > 0)
+                  .map(([v, col, l]) => (
+                    <span key={l} title={`${l}: ${v}`} className="h-full first:rounded-l last:rounded-r" style={{ flexGrow: v, background: col }} />
+                  ))}
+              </div>
+              <ChartLegend
+                items={[
+                  { label: `Present ${t.present_count}`, color: c.good },
+                  { label: `Absent ${t.absent_count}`, color: c.critical },
+                  { label: `Logged out ${t.logged_out_count}`, color: c.warning },
+                  { label: `Not marked ${t.not_marked_count}`, color: c.neutral },
+                ]}
+              />
+            </div>
+          )}
+        </ChartCard>
       </div>
 
-      {/* AI Daily Narrative Report Section */}
-      <div className="card bg-white border border-primary/30">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-accent text-white flex items-center justify-center shadow-sm">
-              <Sparkles className="w-5 h-5 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="font-heading font-bold text-base text-textPrimary">
-                Executive AI Narrative Briefing
-              </h3>
-              <p className="text-xs text-textSecondary">
-                Automated synthesis of substitution coverage, workload bottlenecks, and disruption patterns.
+      {/* Substitutions & workload */}
+      <h2 className="font-heading font-extrabold text-xl text-ink pt-2">Cover and workload</h2>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <ChartCard
+          className="lg:col-span-7"
+          title="Faculty workload"
+          description="Weekly timetabled hours plus approved cover duties (1 hour each), heaviest first"
+          loading={analytics.loading}
+          error={analytics.error}
+          onRetry={analytics.reload}
+          empty={!workload.length}
+          height="h-80"
+          legend={<ChartLegend items={[{ label: 'Timetabled hours', color: c.series[1] }, { label: 'Cover hours', color: c.series[0] }]} />}
+          table={{
+            columns: [
+              { key: 'faculty_name', label: 'Faculty' },
+              { key: 'regular_hours', label: 'Timetabled h', align: 'right' },
+              { key: 'substitution_hours', label: 'Cover h', align: 'right' },
+              { key: 'total_hours', label: 'Total h', align: 'right' },
+            ],
+            rows: workload,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={workload} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} horizontal={false} vertical />
+              <XAxis type="number" allowDecimals={false} {...c.axisProps} />
+              <YAxis type="category" dataKey="faculty_name" {...c.axisProps} width={128} tickFormatter={(v) => (v.length > 18 ? `${v.slice(0, 17)}…` : v)} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="regular_hours" name="Timetabled hours" stackId="h" fill={c.series[1]} maxBarSize={18} stroke={c.surface} strokeWidth={1} />
+              <Bar dataKey="substitution_hours" name="Cover hours" stackId="h" fill={c.series[0]} {...hBarProps} stroke={c.surface} strokeWidth={1} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-5"
+          title="Requests by month"
+          description="Substitution requests created, and how many were covered"
+          loading={subs.loading}
+          error={subs.error}
+          onRetry={subs.reload}
+          empty={!monthly.length}
+          emptyText="No substitution requests in this range."
+          height="h-80"
+          legend={<ChartLegend items={[{ label: 'Requests', color: c.series[0] }, { label: 'Covered', color: c.series[2] }]} />}
+          table={{
+            columns: [
+              { key: 'label', label: 'Month' },
+              { key: 'requests', label: 'Requests', align: 'right' },
+              { key: 'covered', label: 'Covered', align: 'right' },
+            ],
+            rows: monthly,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthly} margin={{ top: 8, right: 12, left: -18, bottom: 0 }} barGap={2}>
+              <CartesianGrid {...c.gridProps} />
+              <XAxis dataKey="label" {...c.axisProps} />
+              <YAxis allowDecimals={false} {...c.axisProps} width={40} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="requests" name="Requests" fill={c.series[0]} {...barProps} />
+              <Bar dataKey="covered" name="Covered" fill={c.series[2]} {...barProps} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-6"
+          title="Requests by subject"
+          description="Which subjects needed cover most (top 8)"
+          loading={subs.loading}
+          error={subs.error}
+          onRetry={subs.reload}
+          empty={!bySubject.length}
+          emptyText="No substitution requests match these filters."
+          table={{
+            columns: [
+              { key: 'name', label: 'Subject' },
+              { key: 'count', label: 'Requests', align: 'right' },
+            ],
+            rows: bySubject,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={bySubject} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} horizontal={false} vertical />
+              <XAxis type="number" allowDecimals={false} {...c.axisProps} />
+              <YAxis type="category" dataKey="name" {...c.axisProps} width={136} tickFormatter={(v) => (v.length > 20 ? `${v.slice(0, 19)}…` : v)} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="count" name="Requests" fill={c.series[0]} {...hBarProps} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-6"
+          title="Most affected hours"
+          description="Substitution requests by class slot in range"
+          loading={analytics.loading}
+          error={analytics.error}
+          onRetry={analytics.reload}
+          empty={!slots.length}
+          emptyText="No classes needed cover in this range."
+          table={{
+            columns: [
+              { key: 'hour', label: 'Slot' },
+              { key: 'affected_count', label: 'Requests', align: 'right' },
+            ],
+            rows: slots,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={slots} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} />
+              <XAxis dataKey="hour" {...c.axisProps} tickFormatter={(v) => v.split(' - ')[0]} />
+              <YAxis allowDecimals={false} {...c.axisProps} width={40} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="affected_count" name="Requests" fill={c.series[1]} {...barProps} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          className="lg:col-span-12"
+          title="Classes by department"
+          description="Weekly timetabled classes per department (current template)"
+          loading={stats.loading}
+          error={stats.error}
+          onRetry={stats.reload}
+          empty={!classesByDept.length}
+          height="h-56"
+          table={{
+            columns: [
+              { key: 'full', label: 'Department' },
+              { key: 'classes', label: 'Classes a week', align: 'right' },
+              { key: 'faculty', label: 'Faculty', align: 'right' },
+            ],
+            rows: classesByDept,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={classesByDept} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+              <CartesianGrid {...c.gridProps} />
+              <XAxis dataKey="name" {...c.axisProps} />
+              <YAxis allowDecimals={false} {...c.axisProps} width={40} />
+              <Tooltip content={<ChartTooltip labelFormatter={(l, p) => p?.[0]?.payload?.full} />} cursor={{ fill: c.cursor }} />
+              <Bar dataKey="classes" name="Classes a week" fill={c.series[2]} {...barProps} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Continuity + AI telemetry */}
+      <h2 className="font-heading font-extrabold text-xl text-ink pt-2">Academic continuity</h2>
+      <section className="sheet p-5" aria-label="Academic continuity">
+        {analytics.loading ? (
+          <Skeleton className="h-24" />
+        ) : analytics.error ? (
+          <ErrorState compact message={analytics.error} onRetry={analytics.reload} />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                ['Lesson plans', a.academic_continuity.total_lesson_plans, 'Stored for cover classes'],
+                ['Plans flagged provisional', a.academic_continuity.plans_with_continuity_warnings, `${a.academic_continuity.continuity_warning_rate_pct}% had no verified progress`],
+                ['Verified progress records', a.academic_continuity.verified_progress_records, `of ${a.academic_continuity.lesson_progress_records} progress records`],
+                ['Handover notes', a.academic_continuity.handover_notes_logged, 'Written by faculty'],
+              ].map(([l, v, n]) => (
+                <div key={l} className="ground-calc rounded-panel p-3.5">
+                  <dt className="text-xs text-ink-2 flex items-center gap-1">
+                    <Calculator className="w-3 h-3" />
+                    {l}
+                  </dt>
+                  <dd className="font-heading font-black text-2xl text-ink tabular mt-1">{v}</dd>
+                  <dd className="text-xs text-ink-3 mt-0.5">{n}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="panel p-4 text-sm">
+              <p className="font-semibold text-ink flex items-center gap-1.5">
+                <Cpu className="w-4 h-4 text-ink-3" />
+                AI gateway use since server start
               </p>
+              <dl className="mt-2 grid grid-cols-2 gap-y-1 text-ink-2">
+                <dt>Primary provider</dt>
+                <dd className="text-right font-semibold text-ink">{a.ai_generation.active_primary_provider}</dd>
+                <dt>Requests</dt>
+                <dd className="text-right font-semibold text-ink tabular">{a.ai_generation.ai_requests}</dd>
+                <dt>Succeeded</dt>
+                <dd className="text-right font-semibold text-ink tabular">{a.ai_generation.ai_successes}</dd>
+                <dt>Failed (rule-based output used)</dt>
+                <dd className="text-right font-semibold text-ink tabular">{a.ai_generation.ai_failures ?? 0}</dd>
+              </dl>
             </div>
           </div>
+        )}
+      </section>
 
-          <button
-            onClick={handleGenerateAiReport}
-            disabled={generatingReport}
-            className="btn-primary text-xs shadow-sm"
-          >
-            {generatingReport ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Synthesizing Telemetry...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5" />
-                Generate Daily Report
-              </>
-            )}
+      {/* Briefing */}
+      <section className="sheet p-5" aria-labelledby="brief-h">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div>
+            <h2 id="brief-h" className="font-heading font-extrabold text-lg text-ink flex items-center gap-2">
+              <BookOpenCheck className="w-5 h-5 text-ink-3" />
+              Today's operational briefing
+            </h2>
+            <p className="text-sm text-ink-2 mt-0.5">Today's counts are calculated first; the narrative is written from them.</p>
+          </div>
+          <button type="button" className="btn-primary no-print" onClick={generate} disabled={reportBusy}>
+            {reportBusy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {reportBusy ? 'Writing briefing…' : report ? 'Regenerate briefing' : 'Generate briefing'}
           </button>
         </div>
-
-        {aiReport ? (
-          <div className="mt-4 p-4 rounded-xl bg-secondary/20 border border-primary/20 text-xs text-textPrimary leading-relaxed animate-in fade-in">
-            <p className="whitespace-pre-line">{aiReport}</p>
+        {reportError && (
+          <div className="mt-4">
+            <ErrorState compact title="No briefing this time" message={reportError} onRetry={generate} />
           </div>
-        ) : (
-          <p className="text-xs text-textSecondary italic mt-4">
-            Click 'Generate Daily Report' above to synthesize today's institutional briefing.
-          </p>
         )}
-      </div>
-
-      {/* Academic Continuity & GenAI Telemetry */}
-      <div className="card space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center border border-accent/30 shadow-sm">
-              <BookOpen className="w-5 h-5 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="font-heading font-bold text-base text-textPrimary">
-                Academic Continuity & GenAI Telemetry
-              </h3>
-              <p className="text-xs text-textSecondary">
-                Audit metrics tracking substitute lesson plan generation, syllabus progress tracking, and AI provider routing.
+        {report && (
+          <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_2fr]">
+            <div className="ground-verified rounded-panel p-4">
+              <p className="text-xs font-semibold text-ok-ink flex items-center gap-1.5 mb-2">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Institutional records, {formatDateLong(report.metrics?.date)}
               </p>
+              <dl className="grid grid-cols-2 gap-y-1.5 text-sm text-ink-2">
+                {[
+                  ['Active faculty', report.metrics?.total_faculty],
+                  ['Present', report.metrics?.present_today],
+                  ['Absent', report.metrics?.absent_today],
+                  ['Requests today', report.metrics?.total_substitutions],
+                  ['Covered', report.metrics?.completed],
+                  ['Open', report.metrics?.pending],
+                  ['Suspended', report.metrics?.suspended],
+                ].map(([l, v]) => (
+                  <div key={l} className="contents">
+                    <dt>{l}</dt>
+                    <dd className="text-right font-semibold text-ink tabular">{v ?? '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="ground-ai rounded-panel p-4">
+              <p className="text-xs font-semibold text-info-ink flex items-center gap-1.5 mb-2">
+                <Sparkles className="w-3.5 h-3.5" />
+                Generated narrative
+              </p>
+              <Markdown text={report.report} />
             </div>
           </div>
-        </div>
-
-        {/* Continuity Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl border border-border bg-background">
-            <span className="text-[11px] text-textSecondary block">Structured Lesson Plans</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="font-heading font-bold text-xl text-textPrimary">
-                {continuityData?.academic_continuity?.total_lesson_plans ?? 0}
-              </span>
-              <span className="text-[11px] text-accent font-medium">12-Point Plans</span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl border border-border bg-background">
-            <span className="text-[11px] text-textSecondary block">Continuity Warning Rate</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className={`font-heading font-bold text-xl ${
-                (continuityData?.academic_continuity?.continuity_warning_rate_pct || 0) > 25
-                  ? 'text-error'
-                  : 'text-warning'
-              }`}>
-                {continuityData?.academic_continuity?.continuity_warning_rate_pct ?? 0}%
-              </span>
-              <span className="text-[11px] text-textSecondary">
-                ({continuityData?.academic_continuity?.plans_with_continuity_warnings ?? 0} flagged)
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl border border-border bg-background">
-            <span className="text-[11px] text-textSecondary block">Verified Progress Logs</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="font-heading font-bold text-xl text-success">
-                {continuityData?.academic_continuity?.verified_progress_records ?? 0}
-              </span>
-              <span className="text-[11px] text-textSecondary">
-                / {continuityData?.academic_continuity?.lesson_progress_records ?? 0} total
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl border border-border bg-background">
-            <span className="text-[11px] text-textSecondary block">Faculty Handover Notes</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="font-heading font-bold text-xl text-info">
-                {continuityData?.academic_continuity?.handover_notes_logged ?? 0}
-              </span>
-              <span className="text-[11px] text-textSecondary">Logged Briefings</span>
-            </div>
-          </div>
-        </div>
-
-        {/* AI Routing Telemetry Sub-panel */}
-        <div className="p-3.5 rounded-xl border border-border bg-secondary/15 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-textPrimary">Active AI Engine:</span>
-            <span className="px-2.5 py-0.5 rounded-full font-bold bg-accent text-white uppercase text-[10px]">
-              {continuityData?.ai_generation?.active_primary_provider || 'Google Gemini'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-6 text-textSecondary">
-            <span>
-              Invocations: <strong className="text-textPrimary font-mono">{continuityData?.ai_generation?.ai_requests ?? 0}</strong>
-            </span>
-            <span>
-              Successes: <strong className="text-success font-mono">{continuityData?.ai_generation?.ai_successes ?? 0}</strong>
-            </span>
-            <span>
-              Failovers: <strong className="text-warning font-mono">{continuityData?.ai_generation?.ai_fallbacks_triggered ?? 0}</strong>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Recharts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Substitutions by Department */}
-        <div className="card">
-          <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
-            <h4 className="font-heading font-bold text-sm text-textPrimary">
-              Substitutions by Department
-            </h4>
-            <span className="text-[11px] text-textSecondary">Cumulative Units</span>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={deptData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0DCE3" vertical={false} />
-                <XAxis
-                  dataKey="department"
-                  tick={{ fontSize: 10, fill: '#827680' }}
-                  angle={-15}
-                  textAnchor="end"
-                />
-                <YAxis tick={{ fontSize: 10, fill: '#827680' }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '0.75rem',
-                    border: '1px solid #F0DCE3',
-                    fontSize: '12px',
-                    boxShadow: '0 2px 12px rgba(184, 92, 122, 0.08)',
-                  }}
-                />
-                <Bar dataKey="count" fill="#B85C7A" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Request Status Distribution */}
-        <div className="card">
-          <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
-            <h4 className="font-heading font-bold text-sm text-textPrimary">
-              Request Status Distribution
-            </h4>
-            <span className="text-[11px] text-textSecondary">Resolution Split</span>
-          </div>
-
-          <div className="h-64 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={85}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '0.75rem',
-                    border: '1px solid #F0DCE3',
-                    fontSize: '12px',
-                  }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  iconType="circle"
-                  formatter={(val) => <span className="text-xs text-textPrimary">{val}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Weekly Substitution Trends */}
-        <div className="card">
-          <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
-            <h4 className="font-heading font-bold text-sm text-textPrimary">
-              Weekly Substitution Trends
-            </h4>
-            <span className="text-[11px] text-textSecondary">Month-over-Month</span>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0DCE3" vertical={false} />
-                <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#827680' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#827680' }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '0.75rem',
-                    border: '1px solid #F0DCE3',
-                    fontSize: '12px',
-                  }}
-                />
-                <Legend
-                  verticalAlign="top"
-                  height={36}
-                  formatter={(val) => <span className="text-xs text-textPrimary capitalize">{val}</span>}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="substitutions"
-                  stroke="#B85C7A"
-                  strokeWidth={2.5}
-                  dot={{ r: 4, fill: '#B85C7A' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="absences"
-                  stroke="#E8A07A"
-                  strokeWidth={2.5}
-                  strokeDasharray="4 4"
-                  dot={{ r: 4, fill: '#E8A07A' }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Top Faculty by Workload */}
-        <div className="card">
-          <div className="flex items-center justify-between pb-4 border-b border-border mb-4">
-            <h4 className="font-heading font-bold text-sm text-textPrimary">
-              Top Faculty by Substitutions Handled
-            </h4>
-            <span className="text-[11px] text-textSecondary">Load Balance Metric</span>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                layout="vertical"
-                data={workloadData}
-                margin={{ top: 5, right: 20, left: 35, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0DCE3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#827680' }} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  tick={{ fontSize: 10, fill: '#393039' }}
-                  width={90}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '0.75rem',
-                    border: '1px solid #F0DCE3',
-                    fontSize: '12px',
-                  }}
-                />
-                <Bar dataKey="count" fill="#6B9E78" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Faculty Workload Table */}
-      <div className="card !p-0 overflow-hidden">
-        <div className="p-6 border-b border-border bg-white flex items-center justify-between">
-          <div>
-            <h4 className="font-heading font-bold text-base text-textPrimary">
-              Faculty Workload Equity Audit
-            </h4>
-            <p className="text-xs text-textSecondary mt-0.5">
-              Individual substitution counts monitored to guarantee equitable teaching distribution.
-            </p>
-          </div>
-          <span className="text-xs text-textSecondary">
-            Top 10 Active Substitutes
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-secondary/30 text-textSecondary text-xs uppercase font-semibold tracking-wider">
-                <th className="py-3.5 px-6">Faculty Member</th>
-                <th className="py-3.5 px-6">Department</th>
-                <th className="py-3.5 px-6 text-center">Substitutions Handled</th>
-                <th className="py-3.5 px-6 text-center">Workload Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border text-sm">
-              {workloadData.map((f, i) => (
-                <tr key={i} className="hover:bg-background/80 transition-colors">
-                  <td className="py-4 px-6 font-semibold text-textPrimary">
-                    {f.name}
-                  </td>
-                  <td className="py-4 px-6 text-xs text-textSecondary">
-                    {f.department}
-                  </td>
-                  <td className="py-4 px-6 text-center">
-                    <span className="font-heading font-bold text-sm text-textPrimary">
-                      {f.count} classes
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-center">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        f.count > 6
-                          ? 'bg-warning/15 text-warning'
-                          : 'bg-success/15 text-success'
-                      }`}
-                    >
-                      {f.count > 6 ? 'High Load' : 'Balanced'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        )}
+      </section>
     </div>
   )
 }

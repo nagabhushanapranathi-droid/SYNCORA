@@ -1,637 +1,344 @@
-import { useState, useEffect } from 'react'
-import {
-  Settings as SettingsIcon,
-  User,
-  Shield,
-  Database,
-  Cpu,
-  Key,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Mail,
-  Building,
-  Info,
-  Sparkles,
-  Activity,
-  Check,
-  Zap,
-  Server,
-} from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
+import { useEffect, useState } from 'react'
+import { RefreshCw, Zap, Database, Server, KeyRound, AlertTriangle, CheckCircle2, Palette, UserRound, Cpu, Save, Info } from 'lucide-react'
+import Badge from '../../components/Badge'
+import EmptyState from '../../components/EmptyState'
+import { Skeleton } from '../../components/LoadingSpinner'
+import { ThemePreference } from '../../components/ThemeToggle'
+import { PageHeader, SheetHeader, ErrorState, Field, Meta } from '../../components/ui'
 import { reportService } from '../../services/reportService'
 import { aiService } from '../../services/aiService'
+import { errorMessage } from '../../services/api'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import useLoad from '../../lib/useLoad'
+import { relativeTime, formatClock, parseTimestamp } from '../../lib/format'
 
 export default function Settings() {
   const { user } = useAuth()
-  const [systemStatus, setSystemStatus] = useState({
-    database: 'CONNECTED',
-    gemini_api: 'CONFIGURED',
-    version: '1.0.4',
-    environment: 'Production-Ready',
-    uptime: '99.98%',
-  })
-  const [checkingStatus, setCheckingStatus] = useState(false)
-
-  // AI Provider & FreeLLMAPI Gateway Management State
-  const [aiConfig, setAiConfig] = useState(null)
-  const [gatewayStatus, setGatewayStatus] = useState(null)
-  const [availableModels, setAvailableModels] = useState([])
-  const [selectedModel, setSelectedModel] = useState('')
-  const [testingGateway, setTestingGateway] = useState(false)
-  const [gatewayTestResult, setGatewayTestResult] = useState(null)
-  const [loadingAiConfig, setLoadingAiConfig] = useState(false)
-  const [savingAiConfig, setSavingAiConfig] = useState(false)
-  const [primaryChoice, setPrimaryChoice] = useState('freellmapi')
-  const [fallbackChoice, setFallbackChoice] = useState('')
-  const [testResults, setTestResults] = useState({})
-
   const toast = useToast()
+  const status = useLoad(() => reportService.getSystemStatus(), [])
+  const config = useLoad(() => aiService.getConfig(), [])
+  const models = useLoad(() => aiService.getModels(false), [])
 
-  const loadModels = async (force = false) => {
-    try {
-      const res = await aiService.getModels(force)
-      const list = res.data?.models || res.models || []
-      setAvailableModels(list)
-    } catch {
-      setAvailableModels([])
-    }
-  }
+  const [form, setForm] = useState({ primary_provider: 'freellmapi', fallback_provider: '', default_model: '', timeout: '', max_retries: '' })
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [providerTests, setProviderTests] = useState({})
 
-  const loadAiConfig = async () => {
-    setLoadingAiConfig(true)
-    try {
-      const res = await aiService.getConfig()
-      const cfg = res.data || res.config || res
-      setAiConfig(cfg)
-      if (cfg.gateway) {
-        setGatewayStatus(cfg.gateway)
-        if (cfg.gateway.default_model) setSelectedModel(cfg.gateway.default_model)
-      }
-      if (cfg.primary_provider) setPrimaryChoice(cfg.primary_provider)
-      if (cfg.fallback_provider) setFallbackChoice(cfg.fallback_provider)
-      loadModels(false)
-    } catch {
-      // Graceful fallback defaults if endpoint unavailable
-      setAiConfig({
-        primary_provider: 'freellmapi',
-        fallback_provider: '',
-        gateway: {
-          available: true,
-          base_url: 'http://127.0.0.1:3001/v1',
-          masked_key: 'free...fe1e',
-          default_model: 'auto',
-          models_count: 0
-        },
-        metrics: { requests: 0, successes: 0, failures: 0, fallbacks_triggered: 0 },
-      })
-    } finally {
-      setLoadingAiConfig(false)
-    }
-  }
-
-  const handleSaveAiConfig = async (e) => {
-    e.preventDefault()
-    setSavingAiConfig(true)
-    try {
-      await aiService.updateConfig({
-        primary_provider: primaryChoice,
-        fallback_provider: fallbackChoice,
-        default_model: selectedModel,
-      })
-      toast.success('AI Gateway configuration updated successfully.')
-      loadAiConfig()
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to update AI configuration.')
-    } finally {
-      setSavingAiConfig(false)
-    }
-  }
-
-  const handleTestGateway = async () => {
-    setTestingGateway(true)
-    setGatewayTestResult(null)
-    try {
-      const res = await aiService.testConnection()
-      const data = res.data || res
-      setGatewayTestResult({
-        success: data.success,
-        message: data.message,
-        telemetry: data.telemetry,
-      })
-      if (data.success) {
-        toast.success(`FreeLLMAPI Gateway connected (${data.telemetry?.latency_ms || 0}ms)`)
-      } else {
-        toast.warning(data.message || 'FreeLLMAPI Gateway response degraded')
-      }
-      loadModels(true)
-    } catch (err) {
-      setGatewayTestResult({
-        success: false,
-        message: err.response?.data?.error || 'Gateway unreachable at configured endpoint',
-      })
-      toast.error('FreeLLMAPI Gateway unreachable')
-    } finally {
-      setTestingGateway(false)
-    }
-  }
-
-  const handleTestProvider = async (providerKey) => {
-    setTestResults((prev) => ({ ...prev, [providerKey]: { loading: true } }))
-    try {
-      const res = await aiService.testProvider(providerKey.toLowerCase())
-      const data = res.data || res
-      setTestResults((prev) => ({
-        ...prev,
-        [providerKey]: {
-          loading: false,
-          success: data.success !== false,
-          status: data.status || (data.success !== false ? 'ACTIVE' : 'FAILED'),
-          latency: data.latency_ms,
-          message: data.message || 'Provider responded successfully',
-        },
-      }))
-      if (data.success !== false) {
-        toast.success(`${providerKey} connection active (${data.latency_ms || 0}ms)`)
-      } else {
-        toast.error(`${providerKey} test failed: ${data.error || 'Connection error'}`)
-      }
-    } catch (err) {
-      setTestResults((prev) => ({
-        ...prev,
-        [providerKey]: {
-          loading: false,
-          success: false,
-          status: 'FAILED',
-          message: err.response?.data?.error || 'Connectivity check failed',
-        },
-      }))
-      toast.error(`Connectivity check failed for ${providerKey}`)
-    }
-  }
-
-  const checkStatus = async () => {
-    setCheckingStatus(true)
-    try {
-      const res = await reportService.getSystemStatus()
-      const d = res.data || res
-      setSystemStatus((prev) => ({
-        ...prev,
-        database: d.database || 'CONNECTED',
-        gemini_api: d.freellmapi_status || d.gemini_status || 'CONFIGURED',
-        version: d.version || '2.0.0',
-      }))
-      toast.success('System telemetry verified.')
-      loadAiConfig()
-    } catch {
-      // Keep healthy defaults
-      toast.info('System status verified via local telemetry.')
-    } finally {
-      setCheckingStatus(false)
-    }
-  }
+  const cfg = config.data
+  const gw = cfg?.gateway
 
   useEffect(() => {
-    checkStatus()
-    loadAiConfig()
-  }, [])
+    if (!cfg) return
+    setForm((f) => ({
+      ...f,
+      primary_provider: cfg.primary_provider || 'freellmapi',
+      fallback_provider: cfg.fallback_provider || '',
+      default_model: gw?.default_model || '',
+    }))
+  }, [cfg, gw?.default_model])
+
+  const modelList = models.data?.models || gw?.available_models || []
+
+  const save = async (e) => {
+    e.preventDefault()
+    const t = form.timeout === '' ? null : Number(form.timeout)
+    const r = form.max_retries === '' ? null : Number(form.max_retries)
+    if (t !== null && (Number.isNaN(t) || t < 5 || t > 300)) return toast.error('Timeout must be between 5 and 300 seconds.')
+    if (r !== null && (Number.isNaN(r) || r < 0 || r > 5)) return toast.error('Retries must be between 0 and 5.')
+    setSaving(true)
+    try {
+      const payload = { primary_provider: form.primary_provider, fallback_provider: form.fallback_provider }
+      if (form.default_model) payload.default_model = form.default_model
+      if (t !== null) payload.timeout = t
+      if (r !== null) payload.max_retries = r
+      await aiService.updateConfig(payload)
+      toast.success('AI settings saved for the running server.')
+      config.reload()
+    } catch (err) {
+      toast.error(errorMessage(err, 'AI settings could not be saved.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const testGateway = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await aiService.testConnection()
+      setTestResult(res)
+      models.reload()
+    } catch (err) {
+      setTestResult({ success: false, message: errorMessage(err, 'The connectivity test could not run.') })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const testProvider = async (name) => {
+    setProviderTests((p) => ({ ...p, [name]: { loading: true } }))
+    try {
+      const res = await aiService.testProvider(name)
+      setProviderTests((p) => ({ ...p, [name]: res }))
+    } catch (err) {
+      setProviderTests((p) => ({ ...p, [name]: { success: false, message: errorMessage(err, 'Test failed.') } }))
+    }
+  }
+
+  const s = status.data
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Account Settings Section */}
-      <div className="card">
-        <div className="flex items-center gap-2.5 pb-4 border-b border-border mb-6">
-          <div className="w-9 h-9 rounded-xl bg-accent text-white flex items-center justify-center shadow-sm">
-            <User className="w-5 h-5 stroke-[2]" />
-          </div>
-          <div>
-            <h3 className="font-heading font-bold text-base text-textPrimary">
-              Administrative Account Details
-            </h3>
-            <p className="text-xs text-textSecondary">
-              Your registered administrative profile and institutional role credentials.
-            </p>
-          </div>
+    <div className="space-y-6">
+      <PageHeader title="Settings" description="Appearance, your account, system health and the AI gateway." />
+
+      <section className="sheet" aria-labelledby="ap-h">
+        <SheetHeader title={<span id="ap-h">Appearance</span>} description="Saved in this browser only." icon={Palette} />
+        <div className="px-5 pb-5">
+          <ThemePreference />
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-sm">
-          <div>
-            <label className="label">Full Legal Name</label>
-            <div className="p-3 rounded-xl border border-border bg-background text-textPrimary font-medium">
-              {user?.name || 'Administrator'}
-            </div>
-          </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="sheet" aria-labelledby="acc-h">
+          <SheetHeader title={<span id="acc-h">Your account</span>} icon={UserRound} />
+          <dl className="px-5 pb-5 grid grid-cols-2 gap-4 text-sm">
+            <Meta label="Name">{user?.name}</Meta>
+            <Meta label="Role">{user?.role === 'admin' ? 'Administrator' : user?.role}</Meta>
+            <Meta label="Email" className="col-span-2">
+              {user?.email}
+            </Meta>
+          </dl>
+        </section>
 
-          <div>
-            <label className="label">Institutional Email</label>
-            <div className="p-3 rounded-xl border border-border bg-background text-textPrimary font-medium flex items-center gap-2">
-              <Mail className="w-4 h-4 text-accent" />
-              {user?.email || 'admin@syncora.edu'}
-            </div>
+        <section className="sheet" aria-labelledby="sys-h">
+          <SheetHeader
+            title={<span id="sys-h">System status</span>}
+            icon={Server}
+            actions={
+              <button type="button" className="btn-ghost btn-sm" onClick={status.reload} disabled={status.loading}>
+                <RefreshCw className={`w-3.5 h-3.5 ${status.loading ? 'animate-spin' : ''}`} />
+                Check again
+              </button>
+            }
+          />
+          <div className="px-5 pb-5">
+            {status.loading && !s ? (
+              <Skeleton className="h-24" />
+            ) : status.error ? (
+              <ErrorState compact message={status.error} onRetry={status.reload} />
+            ) : (
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <Meta label="Database">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-ink-3" />
+                    <Badge status={s.database} />
+                  </span>
+                </Meta>
+                <Meta label="AI gateway">
+                  <Badge status={s.freellmapi_status} />
+                </Meta>
+                <Meta label="Backend version">{s.version}</Meta>
+                <Meta label="Environment">{s.environment}</Meta>
+                <Meta label="Active faculty">{s.active_faculty}</Meta>
+              </dl>
+            )}
           </div>
-
-          <div>
-            <label className="label">Assigned Role</label>
-            <div className="p-3 rounded-xl border border-border bg-background text-textPrimary font-medium flex items-center justify-between">
-              <span className="capitalize">{user?.role || 'System Administrator'}</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent/15 text-accent uppercase">
-                Root Access
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Campus Department</label>
-            <div className="p-3 rounded-xl border border-border bg-background text-textPrimary font-medium flex items-center gap-2">
-              <Building className="w-4 h-4 text-textSecondary" />
-              {user?.department?.name || 'Academic Administration'}
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
 
-      {/* System Infrastructure Telemetry */}
-      <div className="card">
-        <div className="flex items-center justify-between pb-4 border-b border-border mb-6">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-secondary text-accent flex items-center justify-center border border-border">
-              <Cpu className="w-5 h-5 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="font-heading font-bold text-base text-textPrimary">
-                System Infrastructure & Model Status
-              </h3>
-              <p className="text-xs text-textSecondary">
-                Live heartbeat verification for database cluster and Gemini LLM engine.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={checkStatus}
-            disabled={checkingStatus}
-            className="btn-secondary text-xs"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${checkingStatus ? 'animate-spin' : ''}`} />
-            Ping Infrastructure
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Database Card */}
-          <div className="p-4 rounded-xl border border-border bg-white flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shrink-0">
-                <Database className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-heading font-semibold text-xs text-textPrimary block">
-                  PostgreSQL / SQLite Database
-                </span>
-                <span className="text-[11px] text-textSecondary">
-                  Timetable schema, ACID transaction pool
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-success bg-success/10 px-2.5 py-1 rounded-full">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Connected
-            </div>
-          </div>
-
-          {/* Gemini AI Status Card */}
-          <div className="p-4 rounded-xl border border-border bg-white flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-info/10 text-info flex items-center justify-center shrink-0">
-                <Key className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-heading font-semibold text-xs text-textPrimary block">
-                  Gemini 1.5 Pro Neural Engine
-                </span>
-                <span className="text-[11px] text-textSecondary">
-                  Candidate ranking & disruption reasoning
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-info bg-info/10 px-2.5 py-1 rounded-full">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Configured
-            </div>
-          </div>
-        </div>
-
-        {/* System Meta Specs */}
-        <div className="mt-5 p-4 rounded-xl bg-background border border-border grid grid-cols-3 gap-4 text-center text-xs">
-          <div>
-            <span className="text-textSecondary block">Platform Build</span>
-            <span className="font-mono font-semibold text-textPrimary mt-0.5 block">
-              v{systemStatus.version}
-            </span>
-          </div>
-          <div>
-            <span className="text-textSecondary block">System Uptime</span>
-            <span className="font-mono font-semibold text-success mt-0.5 block">
-              {systemStatus.uptime}
-            </span>
-          </div>
-          <div>
-            <span className="text-textSecondary block">Backend Proxy</span>
-            <span className="font-mono font-semibold text-textPrimary mt-0.5 block">
-              localhost:5000
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* GenAI Architecture & Provider Routing */}
-      <div className="card space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center border border-accent/30 shadow-sm">
-              <Sparkles className="w-5 h-5 stroke-[2]" />
-            </div>
-            <div>
-              <h3 className="font-heading font-bold text-base text-textPrimary">
-                GenAI Multi-Model Provider Architecture
-              </h3>
-              <p className="text-xs text-textSecondary">
-                Manage primary AI dispatch, failover policies, masked credentials, and live provider health.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={loadAiConfig}
-            disabled={loadingAiConfig}
-            className="btn-secondary text-xs self-start sm:self-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingAiConfig ? 'animate-spin' : ''}`} />
-            Refresh Status
-          </button>
-        </div>
-
-        {/* AI Performance & Telemetry Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-3 rounded-xl border border-border bg-background text-center">
-            <span className="text-[11px] text-textSecondary block">Total AI Invocations</span>
-            <span className="font-heading font-bold text-lg text-textPrimary block mt-0.5">
-              {aiConfig?.metrics?.requests ?? 0}
-            </span>
-          </div>
-          <div className="p-3 rounded-xl border border-border bg-background text-center">
-            <span className="text-[11px] text-textSecondary block">Successful Generations</span>
-            <span className="font-heading font-bold text-lg text-success block mt-0.5">
-              {aiConfig?.metrics?.successes ?? 0}
-            </span>
-          </div>
-          <div className="p-3 rounded-xl border border-border bg-background text-center">
-            <span className="text-[11px] text-textSecondary block">Generation Errors</span>
-            <span className="font-heading font-bold text-lg text-error block mt-0.5">
-              {aiConfig?.metrics?.failures ?? 0}
-            </span>
-          </div>
-          <div className="p-3 rounded-xl border border-border bg-background text-center">
-            <span className="text-[11px] text-textSecondary block">Failovers Triggered</span>
-            <span className="font-heading font-bold text-lg text-warning block mt-0.5">
-              {aiConfig?.metrics?.fallbacks_triggered ?? 0}
-            </span>
-          </div>
-        </div>
-
-        {/* Routing Preferences Form */}
-        <form onSubmit={handleSaveAiConfig} className="p-4 rounded-xl border border-border bg-secondary/15 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="font-heading font-bold text-xs uppercase tracking-wider text-textPrimary flex items-center gap-1.5">
-              <Activity className="w-4 h-4 text-accent" />
-              Active Dispatch & Fallback Policy
-            </span>
-            <button
-              type="submit"
-              disabled={savingAiConfig}
-              className="btn-primary text-xs py-1.5 px-3 inline-flex items-center gap-1.5 shadow-sm"
-            >
-              <Check className="w-3.5 h-3.5" />
-              {savingAiConfig ? 'Saving...' : 'Save AI Policy'}
+      {/* AI gateway */}
+      <section className="sheet" aria-labelledby="ai-h">
+        <SheetHeader
+          title={<span id="ai-h">AI gateway (FreeLLMAPI)</span>}
+          description="Every AI feature goes browser → SYNCORA server → FreeLLMAPI. Keys never reach the browser."
+          icon={Cpu}
+          actions={
+            <button type="button" className="btn-ghost btn-sm" onClick={config.reload} disabled={config.loading}>
+              <RefreshCw className={`w-3.5 h-3.5 ${config.loading ? 'animate-spin' : ''}`} />
+              Refresh
             </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="label">Central AI Gateway</label>
-              <select
-                value={primaryChoice}
-                onChange={(e) => setPrimaryChoice(e.target.value)}
-                className="input-field text-xs font-semibold"
-              >
-                <option value="freellmapi">FreeLLMAPI Gateway (Recommended / Default)</option>
-                <option value="gemini">Google Gemini (Routed via FreeLLMAPI)</option>
-                <option value="openai">Secondary OpenAI-Compatible Provider</option>
-              </select>
-              <p className="text-[11px] text-textSecondary mt-1">
-                Centralized gateway powering lesson plans, academic tool assistant, and operational reports.
-              </p>
-            </div>
-
-            <div>
-              <label className="label">Dynamic Gateway Model</label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="input-field text-xs font-semibold"
-              >
-                <option value="">auto (Gateway Dynamic Model Routing)</option>
-                {availableModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.id} {m.owned_by ? `(${m.owned_by})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-textSecondary mt-1">
-                {availableModels.length > 0
-                  ? `${availableModels.length} models discovered from FreeLLMAPI /v1/models`
-                  : 'Default model or automatic task routing will be used.'}
-              </p>
-            </div>
-          </div>
-        </form>
-
-        {/* Central FreeLLMAPI Gateway Card */}
-        <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-heading font-bold text-sm text-textPrimary">
-                  FreeLLMAPI Central Gateway
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent text-white uppercase tracking-wider">
-                  Active Gateway
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success/20 text-success border border-success/30">
-                  X-Routed-Via: freellmapi
-                </span>
-              </div>
-              <p className="text-xs text-textSecondary mt-1">
-                Single centralized application-facing AI integration. Upstream model routing is managed by FreeLLMAPI.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleTestGateway}
-              disabled={testingGateway}
-              className="btn-primary text-xs py-1.5 px-3 inline-flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm"
-            >
-              <Zap className={`w-3.5 h-3.5 ${testingGateway ? 'animate-bounce text-warning' : ''}`} />
-              {testingGateway ? 'Auditing Gateway...' : 'Test Gateway Connectivity'}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-textSecondary pt-2 border-t border-accent/15">
-            <div>
-              Base URL:{' '}
-              <span className="font-mono text-textPrimary">
-                {gatewayStatus?.base_url || 'http://127.0.0.1:3001/v1'}
-              </span>
-            </div>
-            <div>
-              API Key:{' '}
-              <span className="font-mono text-textPrimary">
-                {gatewayStatus?.masked_key || 'free...fe1e'}
-              </span>
-            </div>
-            <div>
-              Discovered Models:{' '}
-              <span className="font-semibold text-textPrimary">
-                {availableModels.length || gatewayStatus?.models_count || 'Cached / Auto'}
-              </span>
-            </div>
-          </div>
-
-          {gatewayTestResult && (
-            <div
-              className={`p-3 rounded-lg text-xs flex items-start gap-2.5 ${
-                gatewayTestResult.success ? 'bg-success/10 text-success border border-success/20' : 'bg-warning/10 text-warning border border-warning/20'
-              }`}
-            >
-              {gatewayTestResult.success ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              )}
-              <div className="space-y-0.5">
-                <div className="font-semibold">{gatewayTestResult.message}</div>
-                {gatewayTestResult.telemetry?.latency_ms && (
-                  <div className="text-[11px] opacity-90">
-                    Roundtrip Latency: {gatewayTestResult.telemetry.latency_ms}ms &bull; Routed Via: {gatewayTestResult.telemetry.routed_via || 'freellmapi'}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Configured Provider Cards */}
-        <div className="space-y-3">
-          <h4 className="font-heading font-semibold text-xs text-textSecondary uppercase tracking-wider">
-            All AI Provider Telemetry & Secondary Fallbacks
-          </h4>
-
-          {['freellmapi', 'gemini', 'openai'].map((pkey) => {
-            const pdata = (aiConfig?.providers || []).find((p) => p.name === pkey) || {}
-            const test = testResults[pkey]
-            const isPrimary = (aiConfig?.primary_provider || 'freellmapi') === pkey
-            const isFallback = aiConfig?.fallback_provider === pkey
-
-            return (
-              <div
-                key={pkey}
-                className="p-4 rounded-xl border border-border bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-accent/30 transition-all"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-heading font-bold text-sm text-textPrimary">
-                      {pdata.name || pkey}
-                    </span>
-                    {isPrimary && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent text-white uppercase tracking-wider">
-                        Primary
-                      </span>
-                    )}
-                    {isFallback && !isPrimary && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-secondary text-accent border border-accent/20 uppercase tracking-wider">
-                        Failover Target
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-textSecondary space-y-0.5">
-                    {pdata.model && <div>Model: <span className="font-mono font-medium text-textPrimary">{pdata.model}</span></div>}
-                    {pdata.endpoint && <div>Endpoint: <span className="font-mono text-[11px]">{pdata.endpoint}</span></div>}
-                    {pdata.base_url && <div>Base URL: <span className="font-mono text-[11px]">{pdata.base_url}</span></div>}
+          }
+        />
+        <div className="px-5 pb-5 space-y-6">
+          {config.loading && !cfg ? (
+            <Skeleton className="h-40" />
+          ) : config.error ? (
+            <ErrorState message={config.error} onRetry={config.reload} />
+          ) : (
+            <>
+              <div className={`rounded-panel border p-4 ${gw?.available ? 'border-ok/80 bg-ok-soft' : 'border-warn bg-warn-soft'}`}>
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                  <div className="flex items-start gap-3 flex-1">
+                    {gw?.available ? <CheckCircle2 className="w-5 h-5 text-ok-ink shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 text-warn-ink shrink-0 mt-0.5" />}
                     <div>
-                      Credential Status:{' '}
-                      <span className={`font-semibold ${pdata.configured ? 'text-success' : 'text-textSecondary'}`}>
-                        {pdata.configured ? (pdata.masked_api_key ? `Configured (${pdata.masked_api_key})` : 'Active / Env Configured') : 'Not Configured (Using Mock Fallback)'}
-                      </span>
+                      <p className="font-semibold text-ink">{gw?.available ? 'Gateway online' : 'Gateway unavailable'}</p>
+                      <p className="text-sm text-ink-2">{gw?.message}</p>
+                      {!gw?.available && <p className="text-sm text-ink-2 mt-1">SYNCORA keeps working: lesson plans, notifications, the assistant and briefings fall back to rule-based output.</p>}
                     </div>
                   </div>
-
-                  {/* Test result output */}
-                  {test && !test.loading && (
-                    <div className={`mt-2 p-2 rounded-lg text-xs flex items-center gap-2 ${test.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
-                      {test.success ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0" />}
-                      <span>{test.message} {test.latency ? `(${test.latency}ms)` : ''}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleTestProvider(pkey)}
-                    disabled={test?.loading}
-                    className="btn-secondary text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
-                  >
-                    <Zap className={`w-3.5 h-3.5 ${test?.loading ? 'animate-bounce text-warning' : 'text-accent'}`} />
-                    {test?.loading ? 'Pinging...' : 'Test Connectivity'}
+                  <button type="button" className="btn-primary shrink-0" onClick={testGateway} disabled={testing}>
+                    <Zap className={`w-4 h-4 ${testing ? 'animate-pulse' : ''}`} />
+                    {testing ? 'Testing…' : 'Test connection'}
                   </button>
                 </div>
+                {testResult && (
+                  <p className={`mt-3 text-sm font-medium ${testResult.success ? 'text-ok-ink' : 'text-danger-ink'}`} role="status">
+                    {testResult.success ? 'Connected' : 'Failed'}: {testResult.message}
+                    {testResult.telemetry?.latency_ms ? ` (${testResult.telemetry.latency_ms} ms)` : ''}
+                  </p>
+                )}
               </div>
-            )
-          })}
-        </div>
-      </div>
 
-      {/* Demo Credentials Reference Note */}
-      <div className="card bg-secondary/30 border border-primary/30">
-        <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-accent shrink-0 mt-0.5" />
-          <div className="text-xs text-textPrimary leading-relaxed">
-            <h4 className="font-heading font-bold text-sm text-accent mb-1">
-              Standard Testing & Demo Credentials
-            </h4>
-            <p className="text-textSecondary mb-2">
-              For testing across multiple browser sessions or device simulations, use the pre-seeded credentials:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-              <div className="p-3 rounded-lg bg-white border border-border">
-                <span className="font-semibold block text-textPrimary">Administrator Role:</span>
-                <span className="font-mono text-textSecondary block mt-0.5">
-                  admin@syncora.edu &bull; admin123
-                </span>
+              <dl className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <Meta label="Base URL">
+                  <span className="font-mono text-xs break-all">{gw?.base_url}</span>
+                </Meta>
+                <Meta label="API key">
+                  <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+                    <KeyRound className="w-3.5 h-3.5 text-ink-3" />
+                    {gw?.masked_key || 'Not configured'}
+                  </span>
+                </Meta>
+                <Meta label="Models discovered">{gw?.models_count ?? 0}</Meta>
+                <Meta label="Last call latency">{gw?.metrics?.last_latency_ms ? `${gw.metrics.last_latency_ms} ms` : 'No calls yet'}</Meta>
+              </dl>
+
+              <form onSubmit={save} className="panel p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-heading font-bold text-ink">Routing and model</p>
+                  <button type="submit" className="btn-primary btn-sm" disabled={saving}>
+                    <Save className="w-3.5 h-3.5" />
+                    {saving ? 'Saving…' : 'Save settings'}
+                  </button>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Primary provider" htmlFor="ai-primary" hint="FreeLLMAPI is the supported gateway.">
+                    <select id="ai-primary" className="input" value={form.primary_provider} onChange={(e) => setForm({ ...form, primary_provider: e.target.value })}>
+                      <option value="freellmapi">FreeLLMAPI gateway</option>
+                      {(cfg?.providers || [])
+                        .filter((p) => p.name !== 'freellmapi')
+                        .map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name} (legacy compatibility)
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                  <Field label="Fallback provider" htmlFor="ai-fallback" hint="Used only if the primary fails.">
+                    <select id="ai-fallback" className="input" value={form.fallback_provider} onChange={(e) => setForm({ ...form, fallback_provider: e.target.value })}>
+                      <option value="">None (rule-based fallback)</option>
+                      {(cfg?.providers || [])
+                        .filter((p) => p.name !== form.primary_provider)
+                        .map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                  <Field label="Default model" htmlFor="ai-model" hint={models.loading ? 'Discovering models…' : `${modelList.length} available from /v1/models`}>
+                    <select id="ai-model" className="input" value={form.default_model} onChange={(e) => setForm({ ...form, default_model: e.target.value })}>
+                      <option value="auto">auto (gateway chooses per task)</option>
+                      {form.default_model && form.default_model !== 'auto' && !modelList.some((m) => m.id === form.default_model) && <option value={form.default_model}>{form.default_model}</option>}
+                      {modelList.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.id}
+                          {m.owned_by ? ` (${m.owned_by})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Timeout (seconds)" htmlFor="ai-timeout" hint="Leave blank to keep the current value.">
+                    <input id="ai-timeout" type="number" min={5} max={300} className="input" value={form.timeout} onChange={(e) => setForm({ ...form, timeout: e.target.value })} placeholder="60" />
+                  </Field>
+                  <Field label="Retries on transient errors" htmlFor="ai-retries" hint="Leave blank to keep the current value.">
+                    <input id="ai-retries" type="number" min={0} max={5} className="input" value={form.max_retries} onChange={(e) => setForm({ ...form, max_retries: e.target.value })} placeholder="2" />
+                  </Field>
+                </div>
+                <p className="text-xs text-ink-2 flex gap-1.5">
+                  <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  Saved values apply to the running server immediately and are recorded in the database. After a server restart, the server's environment file applies again.
+                </p>
+              </form>
+
+              <div>
+                <h3 className="font-heading font-bold text-ink mb-2">Providers and usage</h3>
+                <div className="overflow-x-auto rounded-panel border border-line relative">
+                  <table className="tbl text-sm min-w-[720px]">
+                    <thead>
+                      <tr>
+                        <th>Provider</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th className="text-right">Calls</th>
+                        <th className="text-right">Succeeded</th>
+                        <th className="text-right">Failed</th>
+                        <th className="text-right">Tokens in/out</th>
+                        <th className="text-right">
+                          <span className="sr-only">Test</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(cfg?.providers || []).map((p) => {
+                        const m = cfg.usage_metrics?.[p.name] || p.metrics || {}
+                        const t = providerTests[p.name]
+                        return (
+                          <tr key={p.name}>
+                            <td className="font-semibold text-ink">{p.name}</td>
+                            <td className="text-ink-2">{p.is_primary ? 'Primary' : p.is_fallback ? 'Fallback' : 'Standby'}</td>
+                            <td>
+                              <span className="flex flex-col items-start gap-0.5">
+                                <Badge status={p.available ? 'ONLINE' : p.configured ? 'DEGRADED' : 'OFFLINE'} label={p.available ? 'Available' : p.configured ? 'Unreachable' : 'Not configured'} />
+                                {t && !t.loading && <span className={`text-xs ${t.success ? 'text-ok-ink' : 'text-danger-ink'}`}>{t.message}</span>}
+                              </span>
+                            </td>
+                            <td className="text-right tabular">{m.calls ?? 0}</td>
+                            <td className="text-right tabular">{m.successes ?? 0}</td>
+                            <td className="text-right tabular">{m.failures ?? 0}</td>
+                            <td className="text-right tabular">
+                              {m.prompt_tokens ?? 0}/{m.completion_tokens ?? 0}
+                            </td>
+                            <td className="text-right">
+                              <button type="button" className="btn-ghost btn-sm" onClick={() => testProvider(p.name)} disabled={t?.loading}>
+                                {t?.loading ? 'Testing…' : 'Test'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="p-3 rounded-lg bg-white border border-border">
-                <span className="font-semibold block text-textPrimary">Faculty Role:</span>
-                <span className="font-mono text-textSecondary block mt-0.5">
-                  faculty@syncora.edu &bull; faculty123
-                </span>
+
+              <div>
+                <h3 className="font-heading font-bold text-ink mb-2">Recent AI errors</h3>
+                {(cfg?.recent_errors || []).length === 0 ? (
+                  <EmptyState compact icon={CheckCircle2} title="No errors recorded" description="Errors since the server started appear here." />
+                ) : (
+                  <ul className="divide-y divide-line rounded-panel border border-line max-h-72 overflow-y-auto">
+                    {cfg.recent_errors.map((e, i) => (
+                      <li key={i} className="px-4 py-3 text-sm">
+                        <p className="flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                          <span className="chip-neutral">{e.provider}</span>
+                          {e.model && <span className="font-mono">{e.model}</span>}
+                          <span title={parseTimestamp(e.timestamp)?.toLocaleString()}>
+                            {relativeTime(e.timestamp)} ({formatClock(e.timestamp)})
+                          </span>
+                        </p>
+                        <p className="mt-1 text-ink break-words">{e.error}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   )
 }

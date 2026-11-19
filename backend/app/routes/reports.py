@@ -214,14 +214,23 @@ def get_advanced_analytics():
         })
     workload_distribution.sort(key=lambda x: x['total_hours'], reverse=True)
 
-    # 5. Frequently Affected Hours
+    # 5. Frequently Affected Hours (substitution requests in range, grouped by timetable slot)
+    slot_q = SubstitutionRequest.query.join(Timetable).filter(
+        SubstitutionRequest.date >= start_d,
+        SubstitutionRequest.date <= end_d,
+    )
+    if dept_id:
+        slot_q = slot_q.filter(Timetable.department_id == dept_id)
+    slot_counts = {}
+    for sr in slot_q.all():
+        tt = sr.timetable
+        if not tt or not tt.start_time or not tt.end_time:
+            continue
+        label = f"{tt.start_time.strftime('%H:%M')} - {tt.end_time.strftime('%H:%M')}"
+        slot_counts[label] = slot_counts.get(label, 0) + 1
     affected_slots = [
-        {'hour': '09:00 - 10:00', 'affected_count': 3},
-        {'hour': '10:00 - 11:00', 'affected_count': 5},
-        {'hour': '11:00 - 12:00', 'affected_count': 4},
-        {'hour': '12:00 - 13:00', 'affected_count': 1},
-        {'hour': '14:00 - 15:00', 'affected_count': 4},
-        {'hour': '15:00 - 16:00', 'affected_count': 2},
+        {'hour': label, 'affected_count': count}
+        for label, count in sorted(slot_counts.items())
     ]
 
     # 6. Academic Continuity & GenAI Telemetry
@@ -233,9 +242,10 @@ def get_advanced_analytics():
     handover_count = HandoverNote.query.count()
 
     ai_mgr = AIProviderManager()
-    total_ai_reqs = sum(m.get('total_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
-    total_ai_succ = sum(m.get('successful_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
-    total_ai_fail = sum(m.get('failed_requests', 0) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    # Provider counters are recorded as calls / successes / failures (see provider_manager).
+    total_ai_reqs = sum(m.get('calls', m.get('total_requests', 0)) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    total_ai_succ = sum(m.get('successes', m.get('successful_requests', 0)) for m in _USAGE_METRICS.values() if isinstance(m, dict))
+    total_ai_fail = sum(m.get('failures', m.get('failed_requests', 0)) for m in _USAGE_METRICS.values() if isinstance(m, dict))
     total_fallbacks = _USAGE_METRICS.get('fallbacks_triggered', 0)
 
     academic_continuity = {
