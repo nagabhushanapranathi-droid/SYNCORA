@@ -11,48 +11,43 @@ export default function ConfirmDialog({
   cancelText = 'Cancel',
   isDestructive = false,
   loading = false,
+  children,
 }) {
   return (
     <Modal
       isOpen={isOpen}
       onClose={loading ? () => {} : onClose}
+      closeDisabled={loading}
       title={title}
       maxWidth="max-w-md"
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="btn-ghost text-sm"
-          >
+          <button type="button" onClick={onClose} disabled={loading} className="btn-ghost">
             {cancelText}
           </button>
           <button
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className={`text-sm px-4 py-2 rounded-xl font-medium text-white transition-colors disabled:opacity-50 inline-flex items-center gap-2 ${
-              isDestructive
-                ? 'bg-error hover:bg-red-700'
-                : 'bg-accent hover:bg-accent-dark'
-            }`}
+            className={isDestructive ? 'btn-danger' : 'btn-primary'}
           >
-            {loading ? 'Processing...' : confirmText}
+            {loading && <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />}
+            {confirmText}
           </button>
         </>
       }
     >
       <div className="flex items-start gap-4">
         <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-            isDestructive ? 'bg-error/10 text-error' : 'bg-warning/10 text-warning'
+          className={`w-10 h-10 rounded-panel flex items-center justify-center shrink-0 ${
+            isDestructive ? 'bg-danger-soft text-danger-ink' : 'bg-warn-soft text-warn-ink'
           }`}
         >
-          <AlertTriangle className="w-5 h-5 stroke-[2]" />
+          <AlertTriangle className="w-5 h-5" />
         </div>
-        <div className="text-sm text-textSecondary leading-relaxed pt-1">
+        <div className="text-base text-ink-2 leading-relaxed pt-1.5">
           {message}
+          {children}
         </div>
       </div>
     </Modal>

@@ -1,62 +1,45 @@
-export default function Badge({ status, className = '' }) {
-  if (!status) return null
+// Status stickers. Every backend status string maps to a semantic tone and a plain label.
+const STATUS = {
+  PRESENT: ['chip-ok', 'Present'],
+  ABSENT: ['chip-danger', 'Absent'],
+  LOGGED_OUT: ['chip-neutral', 'Logged out'],
+  'LOGGED OUT': ['chip-neutral', 'Logged out'],
+  NOT_MARKED: ['chip-warn', 'Not marked'],
+  PENDING: ['chip-warn', 'Pending'],
+  RECOMMENDED: ['chip-info', 'Recommended'],
+  APPROVED: ['chip-ok', 'Approved'],
+  ASSIGNED: ['chip-ok', 'Assigned'],
+  REJECTED: ['chip-danger', 'Rejected'],
+  SUSPENDED: ['chip-neutral', 'Suspended'],
+  ACKNOWLEDGED: ['chip-ok', 'Acknowledged'],
+  AWAITING_ACK: ['chip-warn', 'Awaiting acknowledgment'],
+  ACTIVE: ['chip-ok', 'Active'],
+  INACTIVE: ['chip-neutral', 'Inactive'],
+  GENERATED: ['chip-info', 'Generated'],
+  VIEWED: ['chip-info', 'Viewed'],
+  IN_PROGRESS: ['chip-warn', 'In progress'],
+  COMPLETED: ['chip-ok', 'Completed'],
+  PLANNED: ['chip-neutral', 'Planned'],
+  CONNECTED: ['chip-ok', 'Connected'],
+  ONLINE: ['chip-ok', 'Online'],
+  OFFLINE: ['chip-danger', 'Offline'],
+  DEGRADED: ['chip-warn', 'Degraded'],
+}
 
-  const s = String(status).toUpperCase()
+export function statusLabel(status) {
+  if (!status) return ''
+  const key = String(status).toUpperCase()
+  return STATUS[key]?.[1] || String(status).replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())
+}
 
-  let badgeClass = 'badge-info'
-  let label = status
-
-  switch (s) {
-    case 'PRESENT':
-      badgeClass = 'badge-present'
-      label = 'Present'
-      break
-    case 'ABSENT':
-      badgeClass = 'badge-absent'
-      label = 'Absent'
-      break
-    case 'PENDING':
-      badgeClass = 'badge-pending'
-      label = 'Pending'
-      break
-    case 'RECOMMENDED':
-      badgeClass = 'badge-info'
-      label = 'Recommended'
-      break
-    case 'APPROVED':
-      badgeClass = 'badge-approved'
-      label = 'Approved'
-      break
-    case 'REJECTED':
-      badgeClass = 'badge-rejected'
-      label = 'Rejected'
-      break
-    case 'SUSPENDED':
-      badgeClass = 'badge-suspended'
-      label = 'Suspended'
-      break
-    case 'LOGGED_OUT':
-    case 'LOGGED OUT':
-      badgeClass = 'badge-suspended'
-      label = 'Logged Out'
-      break
-    case 'ACTIVE':
-      badgeClass = 'badge-present'
-      label = 'Active'
-      break
-    case 'ACKNOWLEDGED':
-      badgeClass = 'badge-approved'
-      label = 'Acknowledged'
-      break
-    default:
-      badgeClass = 'badge-info'
-      label = status
-      break
-  }
-
+export default function Badge({ status, label, tone, className = '', icon: Icon }) {
+  if (!status && !label) return null
+  const key = String(status || '').toUpperCase()
+  const [cls, text] = STATUS[key] || ['chip-neutral', statusLabel(status)]
   return (
-    <span className={`${badgeClass} ${className}`}>
-      {label}
+    <span className={`${tone ? `chip-${tone}` : cls} ${className}`}>
+      {Icon && <Icon className="w-3 h-3" aria-hidden="true" />}
+      {label || text}
     </span>
   )
 }

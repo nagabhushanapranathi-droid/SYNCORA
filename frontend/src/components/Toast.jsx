@@ -1,42 +1,22 @@
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react'
 
-export default function Toast({
-  message,
-  type = 'info',
-  onClose,
-  className = '',
-}) {
+// Inline (non-floating) alert. Floating toasts live in ToastContext.
+const TONES = {
+  success: ['ground-verified', CheckCircle2, 'text-ok-ink'],
+  error: ['bg-danger-soft border border-danger/30', AlertCircle, 'text-danger-ink'],
+  warning: ['bg-warn-soft border border-warn', AlertTriangle, 'text-warn-ink'],
+  info: ['bg-info-soft border border-info', Info, 'text-info-ink'],
+}
+
+export default function Toast({ message, type = 'info', onClose, className = '' }) {
   if (!message) return null
-
-  let border = 'border-border'
-  let icon = <Info className="w-5 h-5 text-info shrink-0" />
-
-  if (type === 'success') {
-    border = 'border-success/30'
-    icon = <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
-  } else if (type === 'error') {
-    border = 'border-error/30'
-    icon = <AlertCircle className="w-5 h-5 text-error shrink-0" />
-  } else if (type === 'warning') {
-    border = 'border-warning/30'
-    icon = <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
-  }
-
+  const [box, Icon, ink] = TONES[type] || TONES.info
   return (
-    <div
-      className={`flex items-start gap-3 p-4 rounded-xl shadow-card-hover border bg-white ${border} transition-all duration-300 ${className}`}
-      role="alert"
-    >
-      {icon}
-      <div className="flex-1 text-sm font-medium text-textPrimary break-words">
-        {message}
-      </div>
+    <div className={`flex items-start gap-3 p-3.5 rounded-panel ${box} ${className}`} role="alert">
+      <Icon className={`w-5 h-5 shrink-0 ${ink}`} />
+      <div className="flex-1 text-base font-medium text-ink break-words">{message}</div>
       {onClose && (
-        <button
-          onClick={onClose}
-          className="text-textSecondary hover:text-textPrimary transition-colors"
-          aria-label="Close alert"
-        >
+        <button onClick={onClose} className="btn-icon w-7 h-7" aria-label="Dismiss alert">
           <X className="w-4 h-4" />
         </button>
       )}
