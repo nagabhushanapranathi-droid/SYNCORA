@@ -15,6 +15,7 @@ from app.models.models import (
     HandoverNote,
 )
 from app.ai.provider_manager import ai_manager
+from app.ai.model_router import TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +425,8 @@ def generate_lesson_plan(
     try:
         structured_dict, provider_used, model_used = ai_manager.generate_structured_json(
             prompt=prompt,
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
+            task_type=TaskType.REASONING
         )
         is_ai = True
         logger.info(f"Lesson plan successfully generated via AI ({provider_used} - {model_used})")

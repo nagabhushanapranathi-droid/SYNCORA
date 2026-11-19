@@ -48,6 +48,16 @@ def get_substitution(request_id):
     return success_response(data=sub_req.to_dict())
 
 
+@substitutions_bp.route('/<int:request_id>/candidates', methods=['GET'])
+def get_substitution_candidates(request_id):
+    """Retrieve ranked substitute faculty candidates for a specific substitution request."""
+    sub_req = SubstitutionRequest.query.get(request_id)
+    if not sub_req:
+        return error_response('Substitution request not found', status=404)
+    candidates = sub_req.get_all_candidates()
+    return success_response(data=candidates)
+
+
 @substitutions_bp.route('/<int:request_id>/approve', methods=['POST'])
 @require_admin
 @csrf_protect

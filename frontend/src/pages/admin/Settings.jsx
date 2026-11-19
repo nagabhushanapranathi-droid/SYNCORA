@@ -34,33 +34,55 @@ export default function Settings() {
   })
   const [checkingStatus, setCheckingStatus] = useState(false)
 
-  // AI Provider Management State
+  // AI Provider & FreeLLMAPI Gateway Management State
   const [aiConfig, setAiConfig] = useState(null)
+  const [gatewayStatus, setGatewayStatus] = useState(null)
+  const [availableModels, setAvailableModels] = useState([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [testingGateway, setTestingGateway] = useState(false)
+  const [gatewayTestResult, setGatewayTestResult] = useState(null)
   const [loadingAiConfig, setLoadingAiConfig] = useState(false)
   const [savingAiConfig, setSavingAiConfig] = useState(false)
-  const [primaryChoice, setPrimaryChoice] = useState('GEMINI')
-  const [fallbackChoice, setFallbackChoice] = useState('FREE_LLM')
+  const [primaryChoice, setPrimaryChoice] = useState('freellmapi')
+  const [fallbackChoice, setFallbackChoice] = useState('')
   const [testResults, setTestResults] = useState({})
 
   const toast = useToast()
+
+  const loadModels = async (force = false) => {
+    try {
+      const res = await aiService.getModels(force)
+      const list = res.data?.models || res.models || []
+      setAvailableModels(list)
+    } catch {
+      setAvailableModels([])
+    }
+  }
 
   const loadAiConfig = async () => {
     setLoadingAiConfig(true)
     try {
       const res = await aiService.getConfig()
-      const cfg = res.config || res
+      const cfg = res.data || res.config || res
       setAiConfig(cfg)
+      if (cfg.gateway) {
+        setGatewayStatus(cfg.gateway)
+        if (cfg.gateway.default_model) setSelectedModel(cfg.gateway.default_model)
+      }
       if (cfg.primary_provider) setPrimaryChoice(cfg.primary_provider)
       if (cfg.fallback_provider) setFallbackChoice(cfg.fallback_provider)
+      loadModels(false)
     } catch {
       // Graceful fallback defaults if endpoint unavailable
       setAiConfig({
-        primary_provider: 'GEMINI',
-        fallback_provider: 'FREE_LLM',
-        active_providers: {
-          GEMINI: { configured: true, name: 'Google Gemini', model: 'gemini-1.5-flash' },
-          FREE_LLM: { configured: false, name: 'Free LLM / HuggingFace Router' },
-          OPENAI_COMPATIBLE: { configured: false, name: 'OpenAI-Compatible Provider' },
+        primary_provider: 'freellmapi',
+        fallback_provider: '',
+        gateway: {
+          available: true,
+          base_url: 'http://127.0.0.1:3001/v1',
+          masked_key: 'free...fe1e',
+          default_model: 'auto',
+          models_count: 0
         },
         metrics: { requests: 0, successes: 0, failures: 0, fallbacks_triggered: 0 },
       })
@@ -76,8 +98,9 @@ export default function Settings() {
       await aiService.updateConfig({
         primary_provider: primaryChoice,
         fallback_provider: fallbackChoice,
+        default_model: selectedModel,
       })
-      toast.success('AI provider configuration updated successfully.')
+      toast.success('AI Gateway configuration updated successfully.')
       loadAiConfig()
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to update AI configuration.')
@@ -86,24 +109,53 @@ export default function Settings() {
     }
   }
 
+  const handleTestGateway = async () => {
+    setTestingGateway(true)
+    setGatewayTestResult(null)
+    try {
+      const res = await aiService.testConnection()
+      const data = res.data || res
+      setGatewayTestResult({
+        success: data.success,
+        message: data.message,
+        telemetry: data.telemetry,
+      })
+      if (data.success) {
+        toast.success(`FreeLLMAPI Gateway connected (${data.telemetry?.latency_ms || 0}ms)`)
+      } else {
+        toast.warning(data.message || 'FreeLLMAPI Gateway response degraded')
+      }
+      loadModels(true)
+    } catch (err) {
+      setGatewayTestResult({
+        success: false,
+        message: err.response?.data?.error || 'Gateway unreachable at configured endpoint',
+      })
+      toast.error('FreeLLMAPI Gateway unreachable')
+    } finally {
+      setTestingGateway(false)
+    }
+  }
+
   const handleTestProvider = async (providerKey) => {
     setTestResults((prev) => ({ ...prev, [providerKey]: { loading: true } }))
     try {
-      const res = await aiService.testProvider(providerKey)
+      const res = await aiService.testProvider(providerKey.toLowerCase())
+      const data = res.data || res
       setTestResults((prev) => ({
         ...prev,
         [providerKey]: {
           loading: false,
-          success: res.success !== false,
-          status: res.status || (res.success !== false ? 'ACTIVE' : 'FAILED'),
-          latency: res.latency_ms,
-          message: res.message || 'Provider responded successfully',
+          success: data.success !== false,
+          status: data.status || (data.success !== false ? 'ACTIVE' : 'FAILED'),
+          latency: data.latency_ms,
+          message: data.message || 'Provider responded successfully',
         },
       }))
-      if (res.success !== false) {
-        toast.success(`${providerKey} connection active (${res.latency_ms || 0}ms)`)
+      if (data.success !== false) {
+        toast.success(`${providerKey} connection active (${data.latency_ms || 0}ms)`)
       } else {
-        toast.error(`${providerKey} test failed: ${res.error || 'Connection error'}`)
+        toast.error(`${providerKey} test failed: ${data.error || 'Connection error'}`)
       }
     } catch (err) {
       setTestResults((prev) => ({
@@ -123,11 +175,12 @@ export default function Settings() {
     setCheckingStatus(true)
     try {
       const res = await reportService.getSystemStatus()
+      const d = res.data || res
       setSystemStatus((prev) => ({
         ...prev,
-        database: res.database || 'CONNECTED',
-        gemini_api: res.gemini_status || res.gemini_api || 'CONFIGURED',
-        version: res.version || '1.0.4',
+        database: d.database || 'CONNECTED',
+        gemini_api: d.freellmapi_status || d.gemini_status || 'CONFIGURED',
+        version: d.version || '2.0.0',
       }))
       toast.success('System telemetry verified.')
       loadAiConfig()
@@ -366,49 +419,129 @@ export default function Settings() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="label">Primary AI Provider</label>
+              <label className="label">Central AI Gateway</label>
               <select
                 value={primaryChoice}
                 onChange={(e) => setPrimaryChoice(e.target.value)}
                 className="input-field text-xs font-semibold"
               >
-                <option value="GEMINI">Google Gemini (Recommended / Default)</option>
-                <option value="FREE_LLM">Free LLM API / HuggingFace Serverless</option>
-                <option value="OPENAI_COMPATIBLE">OpenAI-Compatible Custom Provider</option>
+                <option value="freellmapi">FreeLLMAPI Gateway (Recommended / Default)</option>
+                <option value="gemini">Google Gemini (Routed via FreeLLMAPI)</option>
+                <option value="openai">Secondary OpenAI-Compatible Provider</option>
               </select>
               <p className="text-[11px] text-textSecondary mt-1">
-                Handles substitute lesson planning, candidate explanation, and chat.
+                Centralized gateway powering lesson plans, academic tool assistant, and operational reports.
               </p>
             </div>
 
             <div>
-              <label className="label">Secondary Failover Provider</label>
+              <label className="label">Dynamic Gateway Model</label>
               <select
-                value={fallbackChoice}
-                onChange={(e) => setFallbackChoice(e.target.value)}
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
                 className="input-field text-xs font-semibold"
               >
-                <option value="FREE_LLM">Free LLM API / HuggingFace Serverless</option>
-                <option value="GEMINI">Google Gemini</option>
-                <option value="OPENAI_COMPATIBLE">OpenAI-Compatible Custom Provider</option>
+                <option value="">auto (Gateway Dynamic Model Routing)</option>
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id} {m.owned_by ? `(${m.owned_by})` : ''}
+                  </option>
+                ))}
               </select>
               <p className="text-[11px] text-textSecondary mt-1">
-                Triggered automatically if primary provider quota or rate limit is reached.
+                {availableModels.length > 0
+                  ? `${availableModels.length} models discovered from FreeLLMAPI /v1/models`
+                  : 'Default model or automatic task routing will be used.'}
               </p>
             </div>
           </div>
         </form>
 
+        {/* Central FreeLLMAPI Gateway Card */}
+        <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-heading font-bold text-sm text-textPrimary">
+                  FreeLLMAPI Central Gateway
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent text-white uppercase tracking-wider">
+                  Active Gateway
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success/20 text-success border border-success/30">
+                  X-Routed-Via: freellmapi
+                </span>
+              </div>
+              <p className="text-xs text-textSecondary mt-1">
+                Single centralized application-facing AI integration. Upstream model routing is managed by FreeLLMAPI.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleTestGateway}
+              disabled={testingGateway}
+              className="btn-primary text-xs py-1.5 px-3 inline-flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm"
+            >
+              <Zap className={`w-3.5 h-3.5 ${testingGateway ? 'animate-bounce text-warning' : ''}`} />
+              {testingGateway ? 'Auditing Gateway...' : 'Test Gateway Connectivity'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-textSecondary pt-2 border-t border-accent/15">
+            <div>
+              Base URL:{' '}
+              <span className="font-mono text-textPrimary">
+                {gatewayStatus?.base_url || 'http://127.0.0.1:3001/v1'}
+              </span>
+            </div>
+            <div>
+              API Key:{' '}
+              <span className="font-mono text-textPrimary">
+                {gatewayStatus?.masked_key || 'free...fe1e'}
+              </span>
+            </div>
+            <div>
+              Discovered Models:{' '}
+              <span className="font-semibold text-textPrimary">
+                {availableModels.length || gatewayStatus?.models_count || 'Cached / Auto'}
+              </span>
+            </div>
+          </div>
+
+          {gatewayTestResult && (
+            <div
+              className={`p-3 rounded-lg text-xs flex items-start gap-2.5 ${
+                gatewayTestResult.success ? 'bg-success/10 text-success border border-success/20' : 'bg-warning/10 text-warning border border-warning/20'
+              }`}
+            >
+              {gatewayTestResult.success ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-0.5">
+                <div className="font-semibold">{gatewayTestResult.message}</div>
+                {gatewayTestResult.telemetry?.latency_ms && (
+                  <div className="text-[11px] opacity-90">
+                    Roundtrip Latency: {gatewayTestResult.telemetry.latency_ms}ms &bull; Routed Via: {gatewayTestResult.telemetry.routed_via || 'freellmapi'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Configured Provider Cards */}
         <div className="space-y-3">
           <h4 className="font-heading font-semibold text-xs text-textSecondary uppercase tracking-wider">
-            Provider Telemetry & Connectivity Diagnostics
+            All AI Provider Telemetry & Secondary Fallbacks
           </h4>
 
-          {['GEMINI', 'FREE_LLM', 'OPENAI_COMPATIBLE'].map((pkey) => {
-            const pdata = aiConfig?.active_providers?.[pkey] || {}
+          {['freellmapi', 'gemini', 'openai'].map((pkey) => {
+            const pdata = (aiConfig?.providers || []).find((p) => p.name === pkey) || {}
             const test = testResults[pkey]
-            const isPrimary = aiConfig?.primary_provider === pkey
+            const isPrimary = (aiConfig?.primary_provider || 'freellmapi') === pkey
             const isFallback = aiConfig?.fallback_provider === pkey
 
             return (

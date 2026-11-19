@@ -29,6 +29,16 @@ export const aiService = {
   testProvider: async (provider) => {
     const res = await api.post('/ai/test-provider', { provider })
     return res.data
+  },
+
+  getModels: async (refresh = false) => {
+    const res = await api.get('/ai/models', { params: { refresh } })
+    return res.data
+  },
+
+  testConnection: async () => {
+    const res = await api.post('/ai/test-connection')
+    return res.data
   }
 }
 

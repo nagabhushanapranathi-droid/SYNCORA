@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
 from app.models.models import (
     Faculty,
     Department,
@@ -271,3 +271,57 @@ def get_advanced_analytics():
             'average_rate': round((total_present_range / (total_present_range + total_absent_range) * 100), 1) if (total_present_range + total_absent_range) > 0 else 100.0
         }
     })
+
+
+@reports_bp.route('/workload', methods=['GET'])
+@require_auth
+def get_workload_data_endpoint():
+    """Returns faculty workload statistics across departments."""
+    faculties = Faculty.query.filter_by(is_active=True).all()
+    workload_data = []
+    for f in faculties:
+        sub_count = get_substitution_count(f.id)
+        workload_data.append({
+            'faculty_id': f.id,
+            'faculty_name': f.name,
+            'department_name': f.department.name if f.department else 'General',
+            'designation': f.designation,
+            'substitution_count': sub_count,
+            'count': sub_count
+        })
+    workload_data.sort(key=lambda x: x['substitution_count'], reverse=True)
+    return success_response(data={
+        'faculty_workload': workload_data,
+        'total_faculty': len(faculties)
+    })
+
+
+@reports_bp.route('/system-status', methods=['GET'])
+@require_auth
+def get_system_status_endpoint():
+    """Returns live institutional operational health telemetry."""
+    from app import db
+    from app.ai.provider_manager import ai_manager
+
+    # Check database connectivity
+    db_status = 'CONNECTED'
+    try:
+        db.session.execute(db.text('SELECT 1'))
+    except Exception:
+        db_status = 'DEGRADED'
+
+    # Check FreeLLMAPI gateway
+    gateway_data = ai_manager.get_gateway_telemetry()
+    is_avail = gateway_data.get('available', False)
+
+    return success_response(data={
+        'database': db_status,
+        'freellmapi_status': 'CONNECTED' if is_avail else 'OFFLINE',
+        'gemini_status': 'ROUTED_VIA_GATEWAY',
+        'gemini_api': 'CONNECTED' if is_avail else 'OFFLINE',
+        'version': '2.0.0',
+        'environment': 'production' if not current_app.config.get('TESTING') else 'testing',
+        'active_faculty': Faculty.query.filter_by(is_active=True).count(),
+        'gateway': gateway_data
+    })
+
