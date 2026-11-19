@@ -1,24 +1,24 @@
-import api from './api'
+import api, { body } from './api'
 
 export const reportService = {
   getStats: async (params = {}) => {
     const res = await api.get('/reports', { params })
-    return res.data
+    return body(res)
   },
 
   getWorkload: async () => {
     const res = await api.get('/reports/workload')
-    return res.data
+    return body(res)
   },
 
   getSystemStatus: async () => {
     const res = await api.get('/reports/system-status')
-    return res.data
+    return body(res)
   },
 
   getAnalytics: async (params = {}) => {
     const res = await api.get('/reports/analytics', { params })
-    return res.data
+    return body(res)
   }
 }
 

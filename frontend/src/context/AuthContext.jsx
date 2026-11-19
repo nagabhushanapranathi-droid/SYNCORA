@@ -1,54 +1,50 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { authService } from '../services/authService'
 
 const AuthContext = createContext(null)
+
+/** Accepts either { user: {...} } (login) or the bare user record (/auth/me). */
+function normalizeUser(data) {
+  const u = data?.user || data
+  return u && typeof u === 'object' && u.role ? u : null
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    authService.me()
-      .then((data) => {
-        setUser(data.user || data)
-      })
-      .catch(() => {
-        setUser(null)
-      })
-      .finally(() => {
-        setLoading(false)
-      })
+    authService
+      .me()
+      .then((data) => setUser(normalizeUser(data)))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
   }, [])
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const data = await authService.login(email, password)
-    const loggedInUser = data.user || data
+    const loggedInUser = normalizeUser(data)
     setUser(loggedInUser)
     return loggedInUser
-  }
+  }, [])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await authService.logout()
     } catch {
-      // Ignore errors on logout
+      // The session is cleared client-side regardless.
     } finally {
       setUser(null)
     }
-  }
+  }, [])
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const value = useMemo(() => ({ user, loading, login, logout, setUser }), [user, loading, login, logout])
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider')
   return context
 }
 
