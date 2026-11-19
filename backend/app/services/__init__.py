@@ -21,6 +21,14 @@ from app.services.substitution_service import (
     acknowledge_assignment,
     recalculate_request,
 )
+from app.services.lesson_plan_service import (
+    get_academic_context,
+    generate_lesson_plan,
+    build_deterministic_fallback_plan,
+    format_markdown_lesson_plan,
+    update_lesson_plan_content,
+    record_verified_progress,
+)
 
 __all__ = [
     'create_notification',
@@ -38,4 +46,10 @@ __all__ = [
     'suspend_request',
     'acknowledge_assignment',
     'recalculate_request',
+    'get_academic_context',
+    'generate_lesson_plan',
+    'build_deterministic_fallback_plan',
+    'format_markdown_lesson_plan',
+    'update_lesson_plan_content',
+    'record_verified_progress',
 ]
